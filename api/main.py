@@ -22,6 +22,9 @@ from services.platform_integration import ThradAuctionIntegrator
 from services.trading.bid_discovery import BidDiscoveryEngine
 from services.analytics.asymmetric_pnl import AttentionTokenCalculator
 from api.routes.demo import router as demo_router
+from api.routes.planning import router as planning_router
+from api.routes.media_buying import router as media_buying_router
+from api.routes.intelligence import router as intelligence_router
 
 
 # Pydantic models for API requests/responses
@@ -140,8 +143,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include demo router
+# Include routers
 app.include_router(demo_router)
+app.include_router(planning_router)
+app.include_router(media_buying_router)
+app.include_router(intelligence_router)
 
 
 # Health check endpoint

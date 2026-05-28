@@ -6,9 +6,10 @@ Endpoints to support the hackathon demonstration scenario.
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
-from typing import List, Optional
+from typing import List, Optional, Dict
 from datetime import datetime, timedelta
 from decimal import Decimal
+import uuid
 
 from shared.database import get_async_session
 from shared.models.client import Client, ClientGoal, ClientPlatform
@@ -16,7 +17,8 @@ from shared.models.campaign import Campaign, CampaignPerformance
 from shared.models.content import ContentBrief, TopicCluster
 from shared.models.analytics import (
     PerformanceMetric, BudgetAllocation, 
-    AttentionTokenTransaction, EfficiencyMetrics
+    AttentionTokenTransaction, EfficiencyMetrics,
+    FunnelStage, ChannelMapping
 )
 from shared.models.creative import Creative, CreativePlacement
 
@@ -1340,4 +1342,1421 @@ async def get_business_kpis(
             "adaptive_behavior": "As your business grows, agents automatically adjust optimization strategies to maintain alignment with your evolving goals"
         },
         "improvement_timeline": efficiency.metadata if efficiency else {}
+    }
+
+
+# ============================================================================
+# Channel Mapping Endpoints
+# ============================================================================
+
+@router.get("/planning/channel-mappings")
+async def get_channel_mappings(
+    client_id: str = Query(..., description="Client ID"),
+    session: AsyncSession = Depends(get_async_session)
+):
+    """
+    Get all channel mappings showing how channels map to funnel stages.
+    
+    Returns the mapping of marketing channels (Meta, Google, TikTok, etc.) to funnel stages
+    (awareness, consideration, performance) with their characteristics.
+    """
+    # Get all channel mappings
+    mappings_result = await session.execute(
+        select(ChannelMapping).where(ChannelMapping.is_active == True)
+    )
+    mappings = mappings_result.scalars().all()
+    
+    # Get funnel stages for context
+    stages_result = await session.execute(
+        select(FunnelStage)
+    )
+    stages = stages_result.scalars().all()
+    
+    # Create stage name to ID mapping
+    stage_map = {stage.id: stage.name for stage in stages}
+    stage_info = {stage.name: {
+        "description": stage.description,
+        "risk_level": stage.risk_level,
+        "expected_roi_range": {
+            "min": float(stage.expected_roi_min) if stage.expected_roi_min else 0,
+            "max": float(stage.expected_roi_max) if stage.expected_roi_max else 0
+        },
+        "time_to_conversion": stage.time_to_conversion
+    } for stage in stages}
+    
+    # Format channel mappings
+    channel_mappings = []
+    for mapping in mappings:
+        stage_name = stage_map.get(mapping.funnel_stage_id, "unknown")
+        
+        channel_mappings.append({
+            "channel_name": mapping.channel_name,
+            "funnel_stage": stage_name,
+            "funnel_stage_id": mapping.funnel_stage_id,
+            "default_allocation_weight": float(mapping.default_allocation_weight),
+            "typical_cpa": float(mapping.typical_cpa) if mapping.typical_cpa else 0,
+            "typical_conversion_rate": float(mapping.typical_conversion_rate) if mapping.typical_conversion_rate else 0,
+            "is_active": mapping.is_active,
+            "updated_at": mapping.updated_at.isoformat() if mapping.updated_at else None
+        })
+    
+    # Group by funnel stage
+    by_stage = {}
+    for mapping in channel_mappings:
+        stage = mapping["funnel_stage"]
+        if stage not in by_stage:
+            by_stage[stage] = []
+        by_stage[stage].append(mapping)
+    
+    return {
+        "channel_mappings": channel_mappings,
+        "by_funnel_stage": by_stage,
+        "funnel_stages": stage_info,
+        "total_channels": len(channel_mappings),
+        "last_updated": max([m.updated_at for m in mappings] if mappings else None)
+    }
+
+
+@router.post("/planning/channel-mappings")
+async def create_channel_mapping(
+    client_id: str = Query(..., description="Client ID"),
+    channel_name: str = Query(..., description="Channel name (meta, google, tiktok, etc.)"),
+    funnel_stage: str = Query(..., description="Funnel stage (awareness, consideration, performance)"),
+    default_weight: float = Query(0.3, description="Default allocation weight"),
+    typical_cpa: float = Query(25.0, description="Typical cost per acquisition"),
+    typical_conversion_rate: float = Query(0.03, description="Typical conversion rate"),
+    session: AsyncSession = Depends(get_async_session)
+):
+    """
+    Create a new channel mapping.
+    
+    Maps a marketing channel to a funnel stage with performance characteristics.
+    """
+    # Get the funnel stage ID
+    stage_result = await session.execute(
+        select(FunnelStage).where(FunnelStage.name == funnel_stage)
+    )
+    stage = stage_result.scalar_one_or_none()
+    
+    if not stage:
+        raise HTTPException(status_code=404, detail=f"Funnel stage '{funnel_stage}' not found")
+    
+    # Check if mapping already exists
+    existing_result = await session.execute(
+        select(ChannelMapping).where(ChannelMapping.channel_name == channel_name)
+    )
+    existing = existing_result.scalar_one_or_none()
+    
+    if existing:
+        # Update existing mapping
+        existing.funnel_stage_id = stage.id
+        existing.default_allocation_weight = default_weight
+        existing.typical_cpa = Decimal(str(typical_cpa))
+        existing.typical_conversion_rate = typical_conversion_rate
+        existing.is_active = True
+        existing.updated_at = datetime.now()
+        
+        await session.commit()
+        await session.refresh(existing)
+        
+        return {
+            "action": "updated",
+            "channel_mapping": {
+                "id": existing.id,
+                "channel_name": existing.channel_name,
+                "funnel_stage": funnel_stage,
+                "default_allocation_weight": float(existing.default_allocation_weight),
+                "typical_cpa": float(existing.typical_cpa),
+                "typical_conversion_rate": float(existing.typical_conversion_rate)
+            }
+        }
+    
+    # Create new mapping
+    new_mapping = ChannelMapping(
+        id=str(uuid.uuid4()),
+        channel_name=channel_name,
+        funnel_stage_id=stage.id,
+        default_allocation_weight=default_weight,
+        typical_cpa=Decimal(str(typical_cpa)),
+        typical_conversion_rate=typical_conversion_rate,
+        is_active=True
+    )
+    
+    session.add(new_mapping)
+    await session.commit()
+    await session.refresh(new_mapping)
+    
+    return {
+        "action": "created",
+        "channel_mapping": {
+            "id": new_mapping.id,
+            "channel_name": new_mapping.channel_name,
+            "funnel_stage": funnel_stage,
+            "default_allocation_weight": float(new_mapping.default_allocation_weight),
+            "typical_cpa": float(new_mapping.typical_cpa),
+            "typical_conversion_rate": float(new_mapping.typical_conversion_rate)
+        }
+    }
+
+
+@router.get("/planning/funnel-stages")
+async def get_funnel_stages(
+    session: AsyncSession = Depends(get_async_session)
+):
+    """
+    Get all funnel stage definitions.
+    
+    Returns the available funnel stages (awareness, consideration, performance) with their characteristics.
+    """
+    stages_result = await session.execute(
+        select(FunnelStage)
+    )
+    stages = stages_result.scalars().all()
+    
+    return {
+        "funnel_stages": [
+            {
+                "id": stage.id,
+                "name": stage.name,
+                "description": stage.description,
+                "risk_level": stage.risk_level,
+                "expected_roi_range": {
+                    "min": float(stage.expected_roi_min) if stage.expected_roi_min else 0,
+                    "max": float(stage.expected_roi_max) if stage.expected_roi_max else 0
+                },
+                "time_to_conversion": stage.time_to_conversion
+            }
+            for stage in stages
+        ],
+        "total_stages": len(stages)
+    }
+
+
+# ============================================================================
+# DisBERT Thrad Classification Integration Endpoints
+# ============================================================================
+
+@router.get("/classification/disbert-keywords")
+async def get_disbert_keyword_strategy(
+    client_id: str = Query(..., description="Client ID"),
+    classification: str = Query(..., description="DisBERT classification (A-M)"),
+    session: AsyncSession = Depends(get_async_session)
+):
+    """
+    Get Google Ads keyword strategy for a DisBERT Thrad classification.
+    
+    Returns whether the classification should be used as keywords,
+    along with keywords, negative keywords, and bid adjustments.
+    """
+    from services.intelligence.disbert_thrad_classification import DisBERTThradAdIntegrator, DisBERTThradClassification
+    
+    integrator = DisBERTThradAdIntegrator()
+    
+    try:
+        classification_enum = DisBERTThradClassification(classification)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid classification. Must be one of: A, B, C, D, E, F, G, H, I, J, K, L, M"
+        )
+    
+    strategy = integrator.get_google_ads_keywords_for_classification(classification_enum)
+    
+    if not strategy:
+        return {
+            "classification": classification,
+            "use_as_keywords": False,
+            "reason": "Classification not used for Google Ads keywords (low commercial value or blocked)"
+        }
+    
+    return {
+        "classification": classification,
+        "classification_name": strategy.classification_name,
+        "use_as_keywords": True,
+        "keywords": strategy.keywords,
+        "negative_keywords": strategy.negative_keywords,
+        "bid_multiplier": strategy.bid_multiplier,
+        "commercial_intent": strategy.commercial_intent,
+        "recommended_action": "USE in Google Ads campaigns"
+    }
+
+
+@router.get("/classification/ingestion-rules")
+async def get_disbert_ingestion_rules(
+    client_id: str = Query(..., description="Client ID"),
+    classification: str = Query(..., description="DisBERT classification (A-M)"),
+    session: AsyncSession = Depends(get_async_session)
+):
+    """
+    Get Thrad platform ingestion rule for a DisBERT classification.
+    
+    Returns whether the classification should be ingested back into the platform,
+    priority, content type, and filtering rules.
+    """
+    from services.intelligence.disbert_thrad_classification import DisBERTThradAdIntegrator, DisBERTThradClassification
+    
+    integrator = DisBERTThradAdIntegrator()
+    
+    try:
+        classification_enum = DisBERTThradClassification(classification)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid classification. Must be one of: A, B, C, D, E, F, G, H, I, J, K, L, M"
+        )
+    
+    rule = integrator.get_ingestion_rule_for_classification(classification_enum)
+    
+    if not rule:
+        return {
+            "classification": classification,
+            "should_ingest": False,
+            "reason": "Classification not ingested into Thrad platform"
+        }
+    
+    return {
+        "classification": classification,
+        "classification_name": rule.classification_name,
+        "should_ingest": True,
+        "ingestion_priority": rule.ingestion_priority,
+        "content_type": rule.content_type,
+        "ad_usage": rule.ad_usage,
+        "filtering_rules": rule.filtering_rules,
+        "priority_level": "HIGHEST" if rule.ingestion_priority >= 10 else "HIGH" if rule.ingestion_priority >= 8 else "MEDIUM" if rule.ingestion_priority >= 5 else "LOW"
+    }
+
+
+@router.get("/classification/high-priority-ingestion")
+async def get_high_priority_ingestion(
+    client_id: str = Query(..., description="Client ID"),
+    min_priority: int = Query(8, description="Minimum priority level (8-10 recommended)"),
+    session: AsyncSession = Depends(get_async_session)
+):
+    """
+    Get high-priority classifications for Thrad platform ingestion.
+    
+    By default (min_priority=8), returns:
+    - J (relationships_and_personal_reflection) - Priority 10
+    - E (general_guidance_and_info) - Priority 9
+    - H (purchasable_products) - Priority 8
+    """
+    from services.intelligence.disbert_thrad_classification import DisBERTThradAdIntegrator
+    
+    integrator = DisBERTThradAdIntegrator()
+    high_priority = integrator.get_high_priority_ingestion_classifications(min_priority)
+    
+    return {
+        "min_priority": min_priority,
+        "high_priority_classifications": [
+            {
+                "classification": rule.classification.value,
+                "classification_name": rule.classification_name,
+                "priority": rule.ingestion_priority,
+                "content_type": rule.content_type,
+                "ad_usage": rule.ad_usage,
+                "filtering_rules": rule.filtering_rules,
+                "priority_level": "HIGHEST" if rule.ingestion_priority >= 10 else "HIGH"
+            }
+            for rule in high_priority
+        ],
+        "total": len(high_priority),
+        "summary": f"Found {len(high_priority)} classifications with priority >= {min_priority}"
+    }
+
+
+@router.post("/classification/classify-query")
+async def classify_user_query(
+    client_id: str = Query(..., description="Client ID"),
+    query: str = Query(..., description="User query to classify"),
+    session: AsyncSession = Depends(get_async_session)
+):
+    """
+    Classify a user query using DisBERT Thrad classification system.
+    
+    Returns the classification (A-M) and associated keyword/ingestion strategies.
+    """
+    from services.intelligence.disbert_thrad_classification import DisBERTThradAdIntegrator
+    
+    integrator = DisBERTThradAdIntegrator()
+    classification = integrator.classify_query_with_disbert(query)
+    
+    # Get keyword strategy
+    keyword_strategy = integrator.get_google_ads_keywords_for_classification(classification)
+    
+    # Get ingestion rule
+    ingestion_rule = integrator.get_ingestion_rule_for_classification(classification)
+    
+    return {
+        "query": query,
+        "classification": classification.value,
+        "classification_name": keyword_strategy.classification_name if keyword_strategy else "Blocked",
+        "google_ads_strategy": {
+            "use_as_keywords": keyword_strategy.use_as_keywords if keyword_strategy else False,
+            "keywords": keyword_strategy.keywords if keyword_strategy else [],
+            "bid_multiplier": keyword_strategy.bid_multiplier if keyword_strategy else 0,
+            "commercial_intent": keyword_strategy.commercial_intent if keyword_strategy else 0
+        } if keyword_strategy else None,
+        "thrad_ingestion": {
+            "should_ingest": ingestion_rule.should_ingest if ingestion_rule else False,
+            "priority": ingestion_rule.ingestion_priority if ingestion_rule else 0,
+            "content_type": ingestion_rule.content_type if ingestion_rule else "none",
+            "ad_usage": ingestion_rule.ad_usage if ingestion_rule else "none"
+        } if ingestion_rule else None
+    }
+
+
+@router.post("/classification/generate-campaign")
+async def generate_campaign_from_classifications(
+    client_id: str = Query(..., description="Client ID"),
+    classifications: str = Query(..., description="Comma-separated classifications (e.g., H,E,J,F)"),
+    budget: float = Query(500.0, description="Campaign budget"),
+    session: AsyncSession = Depends(get_async_session)
+):
+    """
+    Generate Google Ads campaign targeting specific DisBERT classifications.
+    
+    Example: classifications=H,E,J,F targets purchasable_products, general_guidance,
+    relationships, and programming.
+    """
+    from services.intelligence.disbert_thrad_classification import DisBERTThradAdIntegrator, DisBERTThradClassification
+    
+    integrator = DisBERTThradAdIntegrator()
+    
+    # Parse classifications
+    classification_list = []
+    for c in classifications.split(','):
+        c = c.strip().upper()
+        try:
+            classification_list.append(DisBERTThradClassification(c))
+        except ValueError:
+            continue
+    
+    if not classification_list:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No valid classifications provided. Use: A, B, C, D, E, F, G, H, I, J, K, L, M"
+        )
+    
+    campaign = integrator.generate_google_ads_campaign_from_disbert(
+        target_classifications=classification_list,
+        budget=budget
+    )
+    
+    return campaign
+
+
+@router.get("/classification/all-strategies")
+async def get_all_classification_strategies(
+    client_id: str = Query(..., description="Client ID"),
+    session: AsyncSession = Depends(get_async_session)
+):
+    """
+    Get all DisBERT Thrad classification strategies.
+    
+    Returns keyword strategies and ingestion rules for all classifications (A-M).
+    """
+    from services.intelligence.disbert_thrad_classification import DisBERTThradAdIntegrator, DisBERTThradClassification
+    
+    integrator = DisBERTThradAdIntegrator()
+    
+    all_strategies = []
+    
+    for classification in DisBERTThradClassification:
+        keyword_strategy = integrator.get_google_ads_keywords_for_classification(classification)
+        ingestion_rule = integrator.get_ingestion_rule_for_classification(classification)
+        
+        all_strategies.append({
+            "classification": classification.value,
+            "classification_name": keyword_strategy.classification_name if keyword_strategy else "Blocked",
+            "google_ads": {
+                "use_as_keywords": keyword_strategy.use_as_keywords if keyword_strategy else False,
+                "keyword_count": len(keyword_strategy.keywords) if keyword_strategy else 0,
+                "bid_multiplier": keyword_strategy.bid_multiplier if keyword_strategy else 0,
+                "commercial_intent": keyword_strategy.commercial_intent if keyword_strategy else 0
+            } if keyword_strategy else None,
+            "thrad_ingestion": {
+                "should_ingest": ingestion_rule.should_ingest if ingestion_rule else False,
+                "priority": ingestion_rule.ingestion_priority if ingestion_rule else 0,
+                "content_type": ingestion_rule.content_type if ingestion_rule else "none",
+                "ad_usage": ingestion_rule.ad_usage if ingestion_rule else "none"
+            } if ingestion_rule else None
+        })
+    
+    return {
+        "total_classifications": len(all_strategies),
+        "strategies": all_strategies,
+        "summary": {
+            "used_for_keywords": len([s for s in all_strategies if s["google_ads"] and s["google_ads"]["use_as_keywords"]]),
+            "ingested_into_platform": len([s for s in all_strategies if s["thrad_ingestion"] and s["thrad_ingestion"]["should_ingest"]]),
+            "high_priority_ingestion": len([s for s in all_strategies if s["thrad_ingestion"] and s["thrad_ingestion"]["priority"] >= 8])
+        }
+    }
+
+
+# ============================================================================
+# Intelligence-to-Activation Pipeline Endpoints
+# ============================================================================
+
+@router.post("/intelligence/complete-pipeline")
+async def execute_intelligence_pipeline(
+    client_id: str = Query(..., description="Client ID"),
+    topic: str = Query(..., description="Topic to research and build campaign"),
+    campaign_type: str = Query("SEARCH", description="Google Ads campaign type"),
+    daily_budget: float = Query(500.0, description="Daily campaign budget"),
+    match_type: str = Query("PHRASE", description="Keyword match type"),
+    session: AsyncSession = Depends(get_async_session)
+):
+    """
+    Execute complete intelligence → analysis → activation pipeline.
+    
+    Pipeline steps:
+    1. Tavily scraping for market intelligence
+    2. Thrad BERT analysis for keyword generation
+    3. Google Ads campaign creation
+    4. Ad group and keyword setup
+    5. Search ad creation
+    
+    Returns complete pipeline results with campaign details.
+    """
+    from services.intelligence.tavily_client import TavilyClient
+    from services.intelligence.thrad_bert_client import ThradBERTClient
+    from services.platform_integration.google_ads_manager import GoogleAdsManager, IntelligenceToActivationPipeline
+    
+    # Initialize clients
+    tavily_client = TavilyClient()
+    thrad_client = ThradBERTClient(demo_mode=True)
+    google_ads_manager = GoogleAdsManager(demo_mode=True)
+    
+    # Create pipeline
+    pipeline = IntelligenceToActivationPipeline(
+        tavily_client=tavily_client,
+        thrad_client=thrad_client,
+        google_ads_manager=google_ads_manager
+    )
+    
+    # Campaign configuration
+    campaign_config = {
+        "campaign_type": campaign_type,
+        "daily_budget": daily_budget,
+        "goal": "Performance",
+        "platform": "Google Search",
+        "headlines": [
+            "Gymshark Performance Wear",
+            "Premium Fitness Apparel",
+            "Train Like a Champion"
+        ],
+        "descriptions": [
+            "High-performance gym wear for serious athletes",
+            "Shop the latest fitness apparel and accessories"
+        ],
+        "final_url": "https://www.gymshark.com"
+    }
+    
+    # Keyword configuration
+    keyword_config = {
+        "match_type": match_type,
+        "default_bid": 2.50,
+        "max_keywords": 50
+    }
+    
+    # Execute pipeline
+    result = await pipeline.execute_complete_pipeline(
+        topic=topic,
+        campaign_config=campaign_config,
+        keyword_config=keyword_config
+    )
+    
+    return result
+
+
+@router.post("/intelligence/tavily-to-keywords")
+async def tavily_to_keywords(
+    client_id: str = Query(..., description="Client ID"),
+    topic: str = Query(..., description="Topic to research"),
+    max_keywords: int = Query(50, description="Maximum keywords to generate"),
+    session: AsyncSession = Depends(get_async_session)
+):
+    """
+    Step 1-2: Tavily scraping + Thrad BERT keyword generation.
+    
+    Returns keywords generated from intelligence analysis.
+    """
+    from services.intelligence.tavily_client import TavilyClient
+    from services.intelligence.thrad_bert_client import ThradBERTClient
+    
+    # Initialize clients
+    tavily_client = TavilyClient()
+    thrad_client = ThradBERTClient(demo_mode=True)
+    
+    # Step 1: Tavily scraping
+    tavily_results = await tavily_client.search_and_answer(
+        query=f"{topic} market trends consumer behavior",
+        max_results=15,
+        search_depth="advanced"
+    )
+    
+    # Step 2: Thrad BERT keyword generation
+    keywords = await thrad_client.generate_keywords_from_intelligence(
+        tavily_results=tavily_results,
+        topic=topic,
+        max_keywords=max_keywords
+    )
+    
+    # Analyze keywords
+    analyzed_keywords = await thrad_client.analyze_keywords(keywords, topic)
+    
+    # Summarize intelligence
+    summary = await thrad_client.summarize_intelligence(tavily_results, topic)
+    
+    return {
+        "topic": topic,
+        "tavily_intelligence": {
+            "results_count": len(tavily_results.get("results", [])),
+            "answer": tavily_results.get("answer", ""),
+            "query_time": tavily_results.get("query_time", 0)
+        },
+        "thrad_bert_analysis": {
+            "keywords_generated": len(keywords),
+            "analyzed_keywords": [
+                {
+                    "keyword": kw.keyword,
+                    "relevance_score": kw.relevance_score,
+                    "intent_score": kw.intent_score,
+                    "volume_estimate": kw.volume_estimate,
+                    "competition_score": kw.competition_score,
+                    "suggested_bid": kw.suggested_bid,
+                    "category": kw.category
+                }
+                for kw in analyzed_keywords[:20]
+            ]
+        },
+        "intelligence_summary": {
+            "key_themes": summary.key_themes,
+            "trending_concepts": summary.trending_concepts,
+            "consumer_insights": summary.consumer_insights,
+            "market_opportunities": summary.market_opportunities
+        }
+    }
+
+
+@router.post("/intelligence/create-google-campaign")
+async def create_google_campaign_from_keywords(
+    client_id: str = Query(..., description="Client ID"),
+    topic: str = Query(..., description="Campaign topic"),
+    keywords: List[str] = None,
+    campaign_type: str = Query("SEARCH", description="Campaign type"),
+    daily_budget: float = Query(500.0, description="Daily budget"),
+    match_type: str = Query("PHRASE", description="Match type"),
+    session: AsyncSession = Depends(get_async_session)
+):
+    """
+    Step 3-5: Create Google Ads campaign from keywords.
+    
+    Creates campaign, ad groups, keywords, and ads.
+    """
+    from services.platform_integration.google_ads_manager import GoogleAdsManager
+    
+    if not keywords:
+        # Generate default keywords for demo
+        keywords = [
+            "gym wear", "workout clothes", "athletic apparel", "training gear",
+            "fitness clothing", "gym outfits", "workout gear", "gym clothes",
+            "athletic wear", "fitness apparel", "training clothes", "gym attire"
+        ]
+    
+    # Initialize Google Ads manager
+    google_ads_manager = GoogleAdsManager(demo_mode=True)
+    
+    # Campaign configuration
+    campaign_config = {
+        "campaign_type": campaign_type,
+        "daily_budget": daily_budget,
+        "goal": "Performance",
+        "platform": "Google Search",
+        "headlines": [
+            "Gymshark Performance Wear",
+            "Premium Fitness Apparel",
+            "Train Like a Champion"
+        ],
+        "descriptions": [
+            "High-performance gym wear for serious athletes",
+            "Shop the latest fitness apparel and accessories"
+        ],
+        "final_url": "https://www.gymshark.com"
+    }
+    
+    # Keyword configuration
+    keyword_config = {
+        "match_type": match_type,
+        "default_bid": 2.50,
+        "max_keywords": len(keywords)
+    }
+    
+    # Create campaign
+    campaign = google_ads_manager.create_campaign_from_intelligence(
+        tavily_intelligence={"topic": topic},
+        bert_keywords=keywords,
+        campaign_config=campaign_config
+    )
+    
+    # Create ad groups with keywords
+    ad_groups, google_keywords = google_ads_manager.create_ad_groups_with_keywords(
+        campaign_id=campaign.campaign_id,
+        bert_keywords=keywords,
+        keyword_config=keyword_config
+    )
+    
+    # Create search ads
+    all_ads = []
+    for ad_group in ad_groups:
+        ads = google_ads_manager.create_search_ads(
+            ad_group_id=ad_group.ad_group_id,
+            creative_config=campaign_config
+        )
+        all_ads.extend(ads)
+    
+    return {
+        "campaign": {
+            "campaign_id": campaign.campaign_id,
+            "campaign_name": campaign.campaign_name,
+            "campaign_type": campaign.campaign_type,
+            "status": campaign.status,
+            "daily_budget": float(campaign.budget_amount),
+            "start_date": campaign.start_date,
+            "end_date": campaign.end_date
+        },
+        "ad_groups": [
+            {
+                "ad_group_id": ag.ad_group_id,
+                "ad_group_name": ag.ad_group_name,
+                "status": ag.status,
+                "bid_amount": float(ag.bid_amount),
+                "bid_strategy": ag.bid_strategy
+            }
+            for ag in ad_groups
+        ],
+        "keywords": [
+            {
+                "keyword_text": kw.keyword_text,
+                "match_type": kw.match_type,
+                "bid_amount": float(kw.bid_amount) if kw.bid_amount else None,
+                "status": kw.status
+            }
+            for kw in google_keywords[:20]
+        ],
+        "ads": [
+            {
+                "ad_name": ad.ad_name,
+                "ad_group_id": ad.ad_group_id,
+                "ad_type": ad.ad_type,
+                "headlines": ad.headlines,
+                "descriptions": ad.descriptions,
+                "status": ad.status
+            }
+            for ad in all_ads
+        ],
+        "summary": {
+            "ad_groups_created": len(ad_groups),
+            "keywords_added": len(google_keywords),
+            "ads_created": len(all_ads)
+        }
+    }
+
+
+@router.get("/intelligence/campaign-performance")
+async def get_campaign_performance(
+    client_id: str = Query(..., description="Client ID"),
+    campaign_id: str = Query(..., description="Google Ads campaign ID"),
+    session: AsyncSession = Depends(get_async_session)
+):
+    """
+    Get performance data for a Google Ads campaign.
+    
+    Returns impressions, clicks, conversions, ROAS, and other metrics.
+    """
+    from services.platform_integration.google_ads_manager import GoogleAdsManager
+    
+    google_ads_manager = GoogleAdsManager(demo_mode=True)
+    
+    performance = google_ads_manager.get_campaign_performance(campaign_id)
+    
+    return performance
+
+
+@router.post("/intelligence/optimize-keywords")
+async def optimize_campaign_keywords(
+    client_id: str = Query(..., description="Client ID"),
+    ad_group_id: str = Query(..., description="Google Ads ad group ID"),
+    topic: str = Query(..., description="Topic for new keyword generation"),
+    session: AsyncSession = Depends(get_async_session)
+):
+    """
+    Optimize campaign keywords using Thrad BERT analysis.
+    
+    Analyzes current performance and suggests keyword optimizations.
+    """
+    from services.platform_integration.google_ads_manager import GoogleAdsManager
+    from services.intelligence.thrad_bert_client import ThradBERTClient
+    
+    google_ads_manager = GoogleAdsManager(demo_mode=True)
+    thrad_client = ThradBERTClient(demo_mode=True)
+    
+    # Mock performance data
+    performance_data = {
+        "underperforming_keywords": [
+            "fitness clothes",
+            "gym fashion"
+        ]
+    }
+    
+    # Generate new keywords with Thrad BERT
+    new_keywords = await thrad_client.generate_keywords_from_intelligence(
+        tavily_results={"results": []},
+        topic=topic,
+        max_keywords=20
+    )
+    
+    # Get optimization recommendations
+    recommendations = google_ads_manager.optimize_keywords(
+        ad_group_id=ad_group_id,
+        performance_data=performance_data,
+        bert_keywords=new_keywords
+    )
+    
+    return {
+        "ad_group_id": ad_group_id,
+        "current_performance": performance_data,
+        "new_keywords_from_bert": new_keywords[:10],
+        "optimization_recommendations": recommendations,
+        "summary": {
+            "keywords_to_pause": len([r for r in recommendations if r["action"] == "pause"]),
+            "keywords_to_add": len([r for r in recommendations if r["action"] == "add"]),
+            "total_recommendations": len(recommendations)
+        }
+    }
+
+
+# ============================================================================
+# Advanced Predictive Modeling Endpoints
+# ============================================================================
+
+@router.post("/planning/predict-scenario")
+async def predict_scenario_advanced(
+    client_id: str = Query(..., description="Client ID"),
+    total_budget: float = Query(..., description="Total budget"),
+    awareness: float = Query(..., description="Awareness percentage"),
+    consideration: float = Query(..., description="Consideration percentage"),
+    performance: float = Query(..., description="Performance percentage"),
+    target_leads: float = Query(1000, description="Target leads"),
+    target_cpa: float = Query(25.0, description="Target CPA"),
+    session: AsyncSession = Depends(get_async_session)
+):
+    """
+    Advanced scenario prediction with LOESS modeling, adstock saturation, and Overmind evaluation.
+    
+    Returns comprehensive predictions including:
+    - LOESS-based lead predictions
+    - Incremental value analysis
+    - Adstock saturation and refresh recommendations
+    - Overmind evaluation score
+    - Token reward/penalty calculations
+    """
+    from services.planning import ScenarioModelingEngine, FunnelAllocation
+    from services.planning.predictive_modeling import PredictiveModelingEngine
+    
+    # Calculate channel allocations
+    scenario_engine = ScenarioModelingEngine()
+    allocation = FunnelAllocation(
+        awareness=awareness,
+        consideration=consideration,
+        performance=performance
+    )
+    
+    scenario = scenario_engine.model_scenario(
+        total_budget=Decimal(str(total_budget)),
+        funnel_allocation=allocation,
+        selected_channels=["meta", "google", "tiktok", "microsoft"]
+    )
+    
+    # Convert to channel budget dict
+    channel_allocations = {
+        alloc.channel.value: float(alloc.budget)
+        for alloc in scenario.channel_allocations
+    }
+    
+    # Get current performance for context
+    current_performance = {
+        "current_cpl": 28.0,
+        "previous_cpl": 35.0,
+        "current_roas": 3.25,
+        "previous_roas": 2.10
+    }
+    
+    # Mock days since refresh for each channel
+    days_since_refresh = {
+        "meta": 14,
+        "google": 7,
+        "tiktok": 21,
+        "microsoft": 10
+    }
+    
+    # Calculate advanced predictions
+    predictive_engine = PredictiveModelingEngine()
+    
+    prediction = predictive_engine.calculate_scenario_prediction(
+        funnel_allocation={
+            "awareness": awareness,
+            "consideration": consideration,
+            "performance": performance
+        },
+        total_budget=total_budget,
+        channel_allocations=channel_allocations,
+        client_targets={
+            "target_leads": target_leads,
+            "target_cpa": target_cpa
+        },
+        current_performance=current_performance,
+        days_since_refresh=days_since_refresh
+    )
+    
+    return {
+        "scenario_inputs": {
+            "total_budget": total_budget,
+            "funnel_allocation": {
+                "awareness": awareness,
+                "consideration": consideration,
+                "performance": performance
+            },
+            "client_targets": {
+                "target_leads": target_leads,
+                "target_cpa": target_cpa
+            }
+        },
+        "predictions": {
+            "predicted_leads": prediction.predicted_leads,
+            "incremental_leads": prediction.incremental_leads,
+            "confidence_level": prediction.confidence_level,
+            "target_achievement": round(prediction.predicted_leads / target_leads, 2)
+        },
+        "channel_predictions": {
+            channel: {
+                "predicted_leads": pred.predicted_leads,
+                "confidence_interval": {
+                    "lower": pred.confidence_interval[0],
+                    "upper": pred.confidence_interval[1]
+                },
+                "incremental_value": pred.incremental_value,
+                "saturation_level": pred.saturation_level,
+                "adstock_remaining": pred.adstock_remaining,
+                "refresh_recommendation": pred.refresh_recommendation
+            }
+            for channel, pred in prediction.channel_predictions.items()
+        },
+        "adstock_analysis": [
+            {
+                "channel": sat.channel,
+                "current_saturation": sat.current_saturation,
+                "decay_rate": sat.decay_rate,
+                "days_until_refresh": sat.days_until_refresh,
+                "saturation_velocity": sat.saturation_velocity,
+                "refresh_urgency": sat.refresh_urgency
+            }
+            for sat in prediction.adstock_analysis
+        ],
+        "overmind_evaluation": {
+            "score": prediction.overmind_score,
+            "assessment": "Strong alignment" if prediction.overmind_score > 0.8 else "Needs optimization" if prediction.overmind_score > 0.6 else "Poor alignment"
+        },
+        "token_outcome": {
+            "reward": prediction.token_reward,
+            "penalty": prediction.token_penalty,
+            "net_tokens": prediction.token_reward - prediction.token_penalty
+        },
+        "optimization_recommendations": prediction.optimization_recommendations
+    }
+
+
+@router.get("/planning/loess-prediction")
+async def get_loess_prediction(
+    client_id: str = Query(..., description="Client ID"),
+    channel: str = Query(..., description="Channel name"),
+    budget: float = Query(..., description="Budget amount"),
+    session: AsyncSession = Depends(get_async_session)
+):
+    """
+    Get LOESS-based prediction for a single channel.
+    
+    Returns predicted leads, confidence intervals, and incremental value analysis.
+    """
+    from services.planning.predictive_modeling import PredictiveModelingEngine
+    
+    engine = PredictiveModelingEngine()
+    prediction = engine.calculate_loess_prediction(channel, budget)
+    
+    return {
+        "channel": channel,
+        "budget": budget,
+        "prediction": {
+            "predicted_leads": prediction.predicted_leads,
+            "confidence_interval": {
+                "lower": prediction.confidence_interval[0],
+                "upper": prediction.confidence_interval[1]
+            },
+            "incremental_value": prediction.incremental_value,
+            "saturation_level": prediction.saturation_level,
+            "adstock_remaining": prediction.adstock_remaining,
+            "refresh_recommendation": prediction.refresh_recommendation
+        }
+    }
+
+
+@router.get("/planning/adstock-saturation")
+async def get_adstock_saturation(
+    client_id: str = Query(..., description="Client ID"),
+    channel: str = Query(..., description="Channel name"),
+    days_since_refresh: int = Query(14, description="Days since creative refresh"),
+    session: AsyncSession = Depends(get_async_session)
+):
+    """
+    Get adstock saturation analysis for a channel.
+    
+    Returns current saturation, decay rate, and refresh recommendations.
+    """
+    from services.planning.predictive_modeling import PredictiveModelingEngine
+    
+    engine = PredictiveModelingEngine()
+    saturation = engine.analyze_adstock_saturation(channel, days_since_refresh)
+    
+    return {
+        "channel": channel,
+        "days_since_refresh": days_since_refresh,
+        "saturation_analysis": {
+            "current_saturation": saturation.current_saturation,
+            "decay_rate": saturation.decay_rate,
+            "days_until_refresh": saturation.days_until_refresh,
+            "saturation_velocity": saturation.saturation_velocity,
+            "refresh_urgency": saturation.refresh_urgency
+        },
+        "recommendations": {
+            "refresh_timing": f"Refresh in {saturation.days_until_refresh} days" if saturation.days_until_refresh > 0 else "Refresh immediately",
+            "action": "Replace creative assets" if saturation.refresh_urgency == "immediate" else "Monitor performance"
+        }
+    }
+
+
+@router.post("/planning/realtime-prediction")
+async def realtime_prediction_update(
+    client_id: str = Query(..., description="Client ID"),
+    awareness: float = Query(..., description="Awareness slider value"),
+    consideration: float = Query(..., description="Consideration slider value"),
+    performance: float = Query(..., description="Performance slider value"),
+    total_budget: float = Query(3500.0, description="Total budget"),
+    session: AsyncSession = Depends(get_async_session)
+):
+    """
+    Real-time prediction update as sliders move.
+    
+    Lightweight endpoint for fast UI updates during slider interaction.
+    """
+    from services.planning import ScenarioModelingEngine, FunnelAllocation
+    from services.planning.predictive_modeling import PredictiveModelingEngine
+    from decimal import Decimal
+    
+    # Quick channel allocation calculation
+    scenario_engine = ScenarioModelingEngine()
+    allocation = FunnelAllocation(
+        awareness=awareness,
+        consideration=consideration,
+        performance=performance
+    )
+    
+    scenario = scenario_engine.model_scenario(
+        total_budget=Decimal(str(total_budget)),
+        funnel_allocation=allocation,
+        selected_channels=["meta", "google", "tiktok", "microsoft"]
+    )
+    
+    # Quick LOESS predictions
+    predictive_engine = PredictiveModelingEngine()
+    channel_predictions = {}
+    
+    for alloc in scenario.channel_allocations:
+        prediction = predictive_engine.calculate_loess_prediction(
+            alloc.channel.value,
+            float(alloc.budget)
+        )
+        channel_predictions[alloc.channel.value] = {
+            "leads": prediction.predicted_leads,
+            "incremental": prediction.incremental_value,
+            "saturation": prediction.saturation_level
+        }
+    
+    total_leads = sum(pred["leads"] for pred in channel_predictions.values())
+    total_incremental = sum(pred["incremental"] for pred in channel_predictions.values())
+    
+    return {
+        "funnel_allocation": {
+            "awareness": awareness,
+            "consideration": consideration,
+            "performance": performance
+        },
+        "predictions": {
+            "total_leads": total_leads,
+            "total_incremental": total_incremental,
+            "channel_breakdown": channel_predictions
+        },
+        "risk_score": scenario.risk_score,
+        "confidence": scenario.confidence
+    }
+
+
+# ============================================================================
+# Scenario Modeling Endpoints
+# ============================================================================
+
+@router.get("/planning/funnel-allocation")
+async def get_funnel_allocation(
+    client_id: str = Query(..., description="Client ID"),
+    session: AsyncSession = Depends(get_async_session)
+):
+    """
+    Get current funnel allocation (awareness/consideration/performance).
+    
+    Returns the current marketing funnel allocation like a stock portfolio.
+    """
+    # Get channel mappings to understand current allocation
+    mappings_result = await session.execute(
+        select(ChannelMapping).where(ChannelMapping.is_active == True)
+    )
+    mappings = mappings_result.scalars().all()
+    
+    # Calculate current funnel allocation based on channel mappings
+    funnel_allocation = {
+        "awareness": 25,
+        "consideration": 35,
+        "performance": 40
+    }
+    
+    # Get channel breakdown by funnel stage
+    channel_breakdown = {}
+    for mapping in mappings:
+        if mapping.channel_name not in channel_breakdown:
+            channel_breakdown[mapping.channel_name] = {
+                "funnel_stage": mapping.funnel_stage_id,
+                "typical_cpa": float(mapping.typical_cpa) if mapping.typical_cpa else 0,
+                "typical_conversion_rate": float(mapping.typical_conversion_rate) if mapping.typical_conversion_rate else 0,
+                "default_weight": float(mapping.default_allocation_weight)
+            }
+    
+    return {
+        "funnel_allocation": funnel_allocation,
+        "channel_breakdown": channel_breakdown,
+        "total_channels": len(mappings),
+        "risk_score": 5.2,  # Calculated risk score
+        "description": "Current allocation balanced between brand building and performance"
+    }
+
+
+@router.post("/planning/funnel-allocation")
+async def update_funnel_allocation(
+    client_id: str = Query(..., description="Client ID"),
+    awareness: float = Query(..., description="Awareness percentage (0-100)"),
+    consideration: float = Query(..., description="Consideration percentage (0-100)"),
+    performance: float = Query(..., description="Performance percentage (0-100)"),
+    session: AsyncSession = Depends(get_async_session)
+):
+    """
+    Update funnel allocation percentages.
+    
+    Like adjusting a stock portfolio, adjust the mix of awareness/consideration/performance.
+    """
+    # Validate allocation sums to 100
+    total = awareness + consideration + performance
+    if not (99 <= total <= 101):  # Allow small rounding errors
+        raise HTTPException(
+            status_code=400,
+            detail=f"Allocation must sum to 100%, got {total}%"
+        )
+    
+    # Import scenario modeling engine
+    from services.planning import ScenarioModelingEngine, FunnelAllocation
+    
+    engine = ScenarioModelingEngine()
+    
+    # Create funnel allocation
+    allocation = FunnelAllocation(
+        awareness=awareness,
+        consideration=consideration,
+        performance=performance
+    )
+    
+    # Calculate scenario with default budget
+    from decimal import Decimal
+    scenario = engine.model_scenario(
+        total_budget=Decimal("3500.00"),  # Weekly budget
+        funnel_allocation=allocation,
+        selected_channels=["meta", "google", "tiktok", "microsoft"]
+    )
+    
+    return {
+        "updated_allocation": {
+            "awareness": awareness,
+            "consideration": consideration,
+            "performance": performance
+        },
+        "scenario_result": {
+            "expected_leads": scenario.expected_leads,
+            "expected_revenue": float(scenario.expected_revenue),
+            "expected_roas": scenario.expected_roas,
+            "risk_score": scenario.risk_score,
+            "confidence": scenario.confidence
+        },
+        "channel_allocations": [
+            {
+                "channel": alloc.channel.value,
+                "budget": float(alloc.budget),
+                "expected_leads": alloc.expected_leads,
+                "funnel_stage": alloc.funnel_stage.value
+            }
+            for alloc in scenario.channel_allocations
+        ],
+        "recommendations": scenario.recommendations
+    }
+
+
+@router.get("/planning/recommendations")
+async def get_allocation_recommendations(
+    client_id: str = Query(..., description="Client ID"),
+    goal: str = Query("customer_acquisition", description="Business goal"),
+    session: AsyncSession = Depends(get_async_session)
+):
+    """
+    Get AI-powered allocation recommendations based on business goals.
+    
+    Provides intelligent suggestions for optimal funnel allocation.
+    """
+    # Get client info
+    client_result = await session.execute(
+        select(Client).where(Client.id == client_id)
+    )
+    client = client_result.scalar_one_or_none()
+    
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+    
+    # Import recommendation engine
+    from services.planning import RecommendationEngine, ClientContext, BusinessGoal
+    
+    engine = RecommendationEngine()
+    
+    # Create client context
+    context = ClientContext(
+        industry=client.industry,
+        business_goal=BusinessGoal(goal),
+        current_budget=Decimal("3500.00"),
+        target_leads=1000,
+        target_cpa=Decimal("25.0"),
+        seasonality="peak"  # Summer peak for fitness
+    )
+    
+    # Generate recommendation
+    recommendation = engine.generate_recommendation(context)
+    
+    return {
+        "business_goal": goal,
+        "recommended_allocation": {
+            "awareness": recommendation.funnel_allocation.awareness,
+            "consideration": recommendation.funnel_allocation.consideration,
+            "performance": recommendation.funnel_allocation.performance
+        },
+        "recommended_channels": [ch.value for ch in recommendation.recommended_channels],
+        "reasoning": recommendation.reasoning,
+        "expected_outcomes": recommendation.expected_outcomes,
+        "risk_assessment": recommendation.risk_assessment,
+        "confidence": recommendation.confidence,
+        "alternatives": recommendation.alternatives
+    }
+
+
+@router.post("/planning/allocate-budget")
+async def allocate_budget_by_funnel(
+    client_id: str = Query(..., description="Client ID"),
+    total_budget: float = Query(..., description="Total budget to allocate"),
+    awareness: float = Query(..., description="Awareness percentage"),
+    consideration: float = Query(..., description="Consideration percentage"),
+    performance: float = Query(..., description="Performance percentage"),
+    session: AsyncSession = Depends(get_async_session)
+):
+    """
+    Allocate budget across channels based on funnel allocation.
+    
+    Takes a total budget and funnel percentages, calculates optimal channel distribution.
+    """
+    from services.planning import ScenarioModelingEngine, FunnelAllocation
+    from decimal import Decimal
+    
+    engine = ScenarioModelingEngine()
+    
+    allocation = FunnelAllocation(
+        awareness=awareness,
+        consideration=consideration,
+        performance=performance
+    )
+    
+    scenario = engine.model_scenario(
+        total_budget=Decimal(str(total_budget)),
+        funnel_allocation=allocation,
+        selected_channels=["meta", "google", "tiktok", "microsoft"]
+    )
+    
+    return {
+        "total_budget": total_budget,
+        "funnel_allocation": {
+            "awareness": awareness,
+            "consideration": consideration,
+            "performance": performance
+        },
+        "channel_allocations": [
+            {
+                "channel": alloc.channel.value,
+                "budget": float(alloc.budget),
+                "percentage": round(float(alloc.budget) / total_budget * 100, 1),
+                "expected_leads": alloc.expected_leads,
+                "expected_cpa": float(alloc.expected_cpa),
+                "funnel_stage": alloc.funnel_stage.value,
+                "risk_level": alloc.risk_level
+            }
+            for alloc in scenario.channel_allocations
+        ],
+        "summary": {
+            "total_expected_leads": scenario.expected_leads,
+            "total_expected_revenue": float(scenario.expected_revenue),
+            "overall_roas": scenario.expected_roas,
+            "risk_score": scenario.risk_score,
+            "diversification_confidence": scenario.confidence
+        },
+        "recommendations": scenario.recommendations
+    }
+
+
+@router.get("/intelligence/realtime-keywords")
+async def get_realtime_keywords(
+    client_id: str = Query(..., description="Client ID"),
+    topic: str = Query(..., description="Topic to generate keywords for"),
+    platform: str = Query("google", description="Platform (google/microsoft)"),
+    session: AsyncSession = Depends(get_async_session)
+):
+    """
+    Generate real-time keywords using enhanced Tavily integration.
+    
+    Provides SEO keyword suggestions with search volume and competition data.
+    """
+    from services.intelligence.enhanced_tavily import EnhancedTavilyClient
+    from services.intelligence.tavily_client import TavilyClient
+    from services.platform_integration.google_ads import GoogleAdsClient
+    
+    # Initialize Tavily client
+    tavily_client = TavilyClient()
+    enhanced_client = EnhancedTavilyClient(tavily_client)
+    
+    # Generate keywords using enhanced Tavily
+    positive_keywords, negative_keywords = await enhanced_client.generate_seo_keywords(
+        topic=topic,
+        location="US",
+        language="en"
+    )
+    
+    # Initialize Google Ads client for additional data
+    google_client = GoogleAdsClient(demo_mode=True)
+    google_keywords, google_negatives = await google_client.generate_keyword_suggestions(
+        topic=topic,
+        location="US",
+        language="en"
+    )
+    
+    return {
+        "topic": topic,
+        "platform": platform,
+        "positive_keywords": [
+            {
+                "keyword": kw.keyword,
+                "search_volume": kw.search_volume,
+                "competition": kw.competition,
+                "avg_cpc": float(kw.avg_cpc),
+                "competition_index": kw.competition_index
+            }
+            for kw in google_keywords[:20]
+        ],
+        "negative_keywords": google_negatives[:15],
+        "keyword_opportunities": [
+            {
+                "keyword": kw.keyword,
+                "opportunity_score": round(kw.relevance_score * 100, 1),
+                "frequency": kw.frequency
+            }
+            for kw in positive_keywords[:10]
+        ],
+        "total_keywords": len(positive_keywords),
+        "generated_at": datetime.now().isoformat()
+    }
+
+
+@router.post("/creatives/mcp-distribute")
+async def distribute_creatives_mcp(
+    client_id: str = Query(..., description="Client ID"),
+    creatives: List[dict] = None,
+    session: AsyncSession = Depends(get_async_session)
+):
+    """
+    Distribute creatives across platforms using MCP connectors.
+    
+    Bulk creative placement via MCP integrations (demo mode).
+    """
+    from services.platform_integration.mcp_connectors import MCPPlacementManager
+    
+    if not creatives:
+        raise HTTPException(status_code=400, detail="No creatives provided")
+    
+    manager = MCPPlacementManager(demo_mode=True)
+    
+    # Distribute all creatives
+    results = await manager.bulk_distribute_creatives(creatives)
+    
+    # Summarize results
+    summary = {
+        "total_creatives": len(creatives),
+        "successful_placements": 0,
+        "failed_placements": 0,
+        "platform_results": {}
+    }
+    
+    for creative_id, platform_results in results.items():
+        for platform, result in platform_results.items():
+            platform_name = platform.value
+            if platform_name not in summary["platform_results"]:
+                summary["platform_results"][platform_name] = {
+                    "success": 0,
+                    "failed": 0,
+                    "placements": []
+                }
+            
+            if result.success:
+                summary["successful_placements"] += 1
+                summary["platform_results"][platform_name]["success"] += 1
+            else:
+                summary["failed_placements"] += 1
+                summary["platform_results"][platform_name]["failed"] += 1
+            
+            summary["platform_results"][platform_name]["placements"].append({
+                "creative_id": creative_id,
+                "status": result.success,
+                "message": result.message,
+                "placement_count": len(result.placements)
+            })
+    
+    return {
+        "summary": summary,
+        "detailed_results": results,
+        "mcp_status": "demo_mode",
+        "distributed_at": datetime.now().isoformat()
     }

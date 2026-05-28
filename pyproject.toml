@@ -48,6 +48,12 @@ dependencies = [
     "aiohttp>=3.9.1",
     "openai>=1.0.0",
     
+    # Google Ads API (optional - for real keyword planning)
+    "google-ads>=22.0.0",
+    
+    # Transformers (for Thrad BERT keyword analysis)
+    "transformers>=4.35.0",
+    
     # Overmind Integration
     "overmind>=0.1.0",
     

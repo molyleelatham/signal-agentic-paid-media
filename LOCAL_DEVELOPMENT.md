@@ -70,6 +70,11 @@ make db-seed       # Seed database with initial data
 make demo-data     # Populate Gymshark demo data
 ```
 
+### Overmind
+```bash
+make overmind-setup # Setup Overmind configuration
+```
+
 ### Server
 ```bash
 make server        # Start FastAPI server (no reload)
@@ -120,6 +125,54 @@ The `.env.local` file uses these localhost-optimized settings:
 - **URL**: redis://localhost:6379/0
 - **Max Memory**: 512MB
 - **Eviction Policy**: allkeys-lru
+
+## Overmind Setup
+
+Overmind is an AI tracing and evaluation platform. To set it up:
+
+```bash
+make overmind-setup
+```
+
+This will:
+- Create `.overmind/` directory
+- Create `.overmind/.env` configuration template
+- Install Cursor IDE skills automatically
+
+### Configure Overmind
+
+Edit `.overmind/.env` and add your API keys:
+
+```bash
+# Get keys from: https://platform.overmind.ai/
+OPENAI_API_KEY=sk-your-openai-key-here
+OVERMIND_API_KEY=om-your-overmind-key-here
+OVERMIND_PROJECT_ID=proj-your-project-id-here
+```
+
+### Get Overmind Credentials
+
+1. Go to: https://platform.overmind.ai
+2. Sign up or login
+3. Create a new project
+4. Copy API key and project ID
+5. Add to `.overmind/.env`
+
+### Overmind Integration
+
+The SIGNAL platform uses Overmind for:
+- Agent execution tracing
+- LLM call monitoring
+- Performance evaluation
+- Token usage tracking
+- Agent optimization
+
+### Cursor Skills
+
+Overmind automatically installs skills for Cursor IDE in `.cursor/skills/`:
+- `overmind-generate-spec-and-dataset` - Generate specifications
+- `overmind-optimize-agent` - Optimize agent performance
+- `overmind-register-agent` - Register agents with Overmind
 
 ## Database Optimization for Localhost
 

@@ -1,4 +1,4 @@
-.PHONY: help install install-dev db-up db-down db-init db-reset db-migrate db-seed demo-data server test lint format clean
+.PHONY: help install install-dev db-up db-down db-init db-reset db-migrate db-seed demo-data server test lint format clean overmind-setup
 
 # Default target
 help:
@@ -33,6 +33,9 @@ help:
 	@echo "  make lint          - Run linters (ruff, mypy)"
 	@echo "  make format        - Format code (black, ruff)"
 	@echo "  make clean         - Clean up temporary files"
+	@echo ""
+	@echo "Overmind:"
+	@echo "  make overmind-setup - Setup Overmind configuration"
 	@echo ""
 	@echo "Utilities:"
 	@echo "  make check-deps    - Check if dependencies are installed"
@@ -158,6 +161,11 @@ check-env:
 	@echo "Checking environment variables..."
 	@test -f .env && echo "✅ .env file exists" || echo "❌ .env file missing"
 	@python3 -c "from shared.utils.settings import settings; print('✅ Settings loaded')" || echo "❌ Settings failed to load"
+
+# Overmind Setup
+overmind-setup:
+	@echo "Setting up Overmind configuration..."
+	python3 scripts/setup_overmind.py
 
 # Quick start for local development
 quickstart: db-up db-init demo-data server-reload

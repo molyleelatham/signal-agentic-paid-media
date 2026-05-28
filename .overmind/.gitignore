@@ -1,0 +1,3 @@
+# Overmind configuration
+.env
+*.log

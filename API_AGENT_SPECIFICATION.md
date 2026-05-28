@@ -1271,6 +1271,329 @@
 
 ---
 
+### Bloomberg Terminal API Endpoints
+
+**Purpose**: Real-time dashboard data for Bloomberg Terminal-style UI
+
+#### GET `/terminal/header-stats`
+
+**Purpose**: Get real-time header statistics (budget, leads, ROAS, tokens)
+
+**Input Parameters**: None
+
+**Output Schema**:
+```typescript
+{
+  budget: number,      // Current budget amount
+  leads: number,       // Total leads generated
+  roas: number,        // Return on ad spend ratio
+  tokens: number       // Token balance
+}
+```
+
+**HTTP Status Codes**:
+- `200`: Success
+
+---
+
+#### GET `/terminal/channel-metrics`
+
+**Purpose**: Get channel performance metrics with trends
+
+**Input Parameters**: None
+
+**Output Schema**:
+```typescript
+Array<{
+  name: string,           // Channel name (e.g., "META", "GOOGLE")
+  spend: number,          // Spend amount
+  leads: number,          // Number of leads
+  cpa: number,            // Cost per acquisition
+  trend: "up" | "down"    // Performance trend
+}>
+```
+
+**HTTP Status Codes**:
+- `200`: Success
+
+---
+
+#### GET `/terminal/campaign-signals`
+
+**Purpose**: Get campaign signals (BUY/HOLD/STOP) with confidence scores
+
+**Input Parameters**: None
+
+**Output Schema**:
+```typescript
+Array<{
+  name: string,                    // Campaign name
+  signal: "BUY" | "HOLD" | "STOP",  // Analyst-style signal
+  confidence: number,               // Confidence score (0-100)
+  spend: number,                    // Campaign spend
+  roas: number                      // ROAS
+}>
+```
+
+**HTTP Status Codes**:
+- `200`: Success
+
+---
+
+#### GET `/terminal/adstock-saturation`
+
+**Purpose**: Get adstock saturation levels and refresh signals
+
+**Input Parameters**: None
+
+**Output Schema**:
+```typescript
+Array<{
+  channel: string,              // Channel name
+  saturation: number,           // Saturation level (0-1)
+  days_until_refresh: number,   // Days until creative refresh needed
+  signal: "HOLD" | "REFRESH"    // Action signal
+}>
+```
+
+**HTTP Status Codes**:
+- `200`: Success
+
+---
+
+#### GET `/terminal/strategy-brief`
+
+**Purpose**: Get strategy brief funnel data by mode
+
+**Input Parameters**:
+```typescript
+{
+  mode: "leads" | "revenue" | "spend"  // Query parameter, default: "leads"
+}
+```
+
+**Output Schema**:
+```typescript
+{
+  mode: "leads" | "revenue" | "spend",
+  funnel: {
+    awareness: number,      // Awareness value
+    consideration: number,  // Consideration value
+    performance: number     // Performance value
+  },
+  timeline: Array<{
+    month: string,   // Month abbreviation (e.g., "Jan")
+    value: number    // Monthly value
+  }>
+}
+```
+
+**HTTP Status Codes**:
+- `200`: Success
+
+---
+
+#### GET `/terminal/strategy-docs`
+
+**Purpose**: Get strategy documentation (previous strategy, actions, results)
+
+**Input Parameters**: None
+
+**Output Schema**:
+```typescript
+{
+  previous_strategy: string,           // Previous strategy description
+  agent_actions: string[],             // List of agent actions taken
+  algorithm_results: {
+    [algorithm_name: string]: string   // Algorithm-specific results
+  },
+  fine_tuning_applied: string[],       // List of fine-tuning changes
+  last_updated: string                 // ISO timestamp
+}
+```
+
+**HTTP Status Codes**:
+- `200`: Success
+
+---
+
+#### GET `/terminal/budget-scenarios`
+
+**Purpose**: Get three budget allocation scenarios (conservative/moderate/growth)
+
+**Input Parameters**: None
+
+**Output Schema**:
+```typescript
+{
+  conservative: {
+    name: "conservative",
+    roas: number,
+    risk_level: "low" | "medium" | "high",
+    pillar_allocation: {
+      awareness: number,
+      consideration: number,
+      performance: number
+    },
+    channel_allocation: {
+      [channel_name: string]: number  // Percentage allocation
+    },
+    expected_return: number
+  },
+  moderate: { /* same structure */ },
+  growth: { /* same structure */ }
+}
+```
+
+**HTTP Status Codes**:
+- `200`: Success
+
+---
+
+#### GET `/terminal/budget-scenarios/{scenario_name}`
+
+**Purpose**: Get detailed information for a specific scenario
+
+**Input Parameters**:
+```typescript
+{
+  scenario_name: "conservative" | "moderate" | "growth"  // Path parameter
+}
+```
+
+**Output Schema**: Same as single scenario object in `/terminal/budget-scenarios`
+
+**HTTP Status Codes**:
+- `200`: Success
+- `404`: Scenario not found
+
+---
+
+#### GET `/terminal/intelligence-results`
+
+**Purpose**: Get intelligence results from Tavily/BERT with classification
+
+**Input Parameters**:
+```typescript
+{
+  query: string  // Optional query string
+}
+```
+
+**Output Schema**:
+```typescript
+Array<{
+  topic: string,                           // Intelligence topic
+  source: "TAVILY" | "BERT",               // Data source
+  relevance: number,                       // Relevance score (0-1)
+  classification: "H" | "G" | "A"          // DisBERT classification
+}>
+```
+
+**HTTP Status Codes**:
+- `200`: Success
+
+---
+
+#### GET `/terminal/content-gaps`
+
+**Purpose**: Get content gap matrix analysis
+
+**Input Parameters**: None
+
+**Output Schema**:
+```typescript
+Array<{
+  topic: string,                        // Content topic
+  severity: "high" | "medium" | "low",  // Gap severity
+  gap_score: number                     // Gap score (0-100)
+}>
+```
+
+**HTTP Status Codes**:
+- `200`: Success
+
+---
+
+#### GET `/terminal/algorithm-scores`
+
+**Purpose**: Get real-time algorithm performance scores
+
+**Input Parameters**: None
+
+**Output Schema**:
+```typescript
+Array<{
+  name: string,                                    // Algorithm name
+  score: number,                                   // Performance score (0-100)
+  status: "optimal" | "good" | "needs_attention"   // Status indicator
+}>
+```
+
+**HTTP Status Codes**:
+- `200`: Success
+
+---
+
+#### GET `/terminal/agent-logs`
+
+**Purpose**: Get agent action logs for CLI display
+
+**Input Parameters**:
+```typescript
+{
+  limit: number  // Query parameter, default: 20
+}
+```
+
+**Output Schema**:
+```typescript
+Array<{
+  timestamp: string,  // Time in HH:MM:SS format
+  agent: string,      // Agent name
+  action: string,     // Action description
+  result?: string     // Optional result
+}>
+```
+
+**HTTP Status Codes**:
+- `200`: Success
+
+---
+
+#### GET `/terminal/full-dashboard`
+
+**Purpose**: Get all dashboard data in a single request (optimized for initial load)
+
+**Input Parameters**: None
+
+**Output Schema**:
+```typescript
+{
+  header_stats: { /* same as /terminal/header-stats */ },
+  channel_metrics: { /* same as /terminal/channel-metrics */ },
+  campaign_signals: { /* same as /terminal/campaign-signals */ },
+  adstock_saturation: { /* same as /terminal/adstock-saturation */ },
+  strategy_brief: {
+    leads: { /* funnel data */ },
+    revenue: { /* funnel data */ },
+    spend: { /* funnel data */ },
+    timeline: { /* timeline data */ }
+  },
+  strategy_docs: { /* same as /terminal/strategy-docs */ },
+  budget_scenarios: { /* same as /terminal/budget-scenarios */ },
+  intelligence_results: { /* same as /terminal/intelligence-results */ },
+  content_gaps: { /* same as /terminal/content-gaps */ },
+  algorithm_scores: { /* same as /terminal/algorithm-scores */ },
+  agent_logs: { /* same as /terminal/agent-logs */ }
+}
+```
+
+**HTTP Status Codes**:
+- `200`: Success
+
+---
+
 ## Common Data Types
 
 ### FunnelStageEnum

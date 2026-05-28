@@ -388,6 +388,77 @@ For questions about:
 
 ---
 
+## 📋 TODO List
+
+### Immediate Priority (This Week)
+- [ ] Test all new API endpoints (planning, media_buying, intelligence)
+- [ ] Verify Planning → Media Buying flow integration works end-to-end
+- [ ] Create end-to-end demo script showing complete user journey
+- [ ] Update Gymshark demo data to use new Planning/Media Buying services
+- [ ] Start development server and verify no import errors
+
+### Short Term (Next 2 Weeks)
+- [ ] Generate Swagger/OpenAPI documentation for new API routes
+- [ ] Update frontend to use new API endpoints (/api/v1/planning/*, /api/v1/media-buying/*)
+- [ ] Create UI components for Planning flow (sliders, predictions display)
+- [ ] Create UI components for Media Buying flow (execution dashboard)
+- [ ] Add error handling and validation for new endpoints
+- [ ] Write unit tests for PlanningService
+- [ ] Write unit tests for MediaBuyingService
+- [ ] Write unit tests for unified adstock engine
+
+### Medium Term (Next Month)
+- [ ] Implement Media Buying → Planning feedback loop automation
+- [ ] Unify token calculation systems (remove duplicate implementations)
+- [ ] Add more intelligence features (expand Tavily and BERT integration)
+- [ ] Integrate DisBERT classification with Planning flow recommendations
+- [ ] Add real-time performance monitoring dashboard
+- [ ] Implement automated budget rebalancing based on adstock signals
+- [ ] Add A/B testing framework for allocation strategies
+- [ ] Create user onboarding flow with guided setup
+
+### Long Term (Next Quarter)
+- [ ] Machine learning model for allocation optimization
+- [ ] Advanced Thompson sampling with contextual bandits
+- [ ] Multi-objective optimization (leads, ROAS, brand awareness)
+- [ ] Seasonality and trend analysis integration
+- [ ] Cross-platform attribution modeling
+- [ ] Automated creative optimization based on performance
+- [ ] Real-time bidding integration with DSPs
+- [ ] Advanced reporting and analytics dashboard
+
+### Technical Debt
+- [ ] Remove deprecated services/trading/adstock_decay.py file
+- [ ] Update all remaining references to old variable names (if any)
+- [ ] Migrate remaining endpoints from demo.py to new route files
+- [ ] Add type hints to all functions
+- [ ] Improve error messages for better debugging
+- [ ] Add logging to all services
+- [ ] Implement rate limiting for API endpoints
+- [ ] Add authentication/authorization to API routes
+
+### Documentation
+- [ ] Create API user guide for external developers
+- [ ] Add architecture diagrams (draw.io or similar)
+- [ ] Create deployment guide
+- [ ] Write troubleshooting guide
+- [ ] Add contribution guidelines
+- [ ] Create video tutorials for new flows
+- [ ] Document environment setup requirements
+- [ ] Add examples for all API endpoints
+
+### Testing & Quality
+- [ ] Set up CI/CD pipeline
+- [ ] Add integration tests for flow integration
+- [ ] Performance testing for Thompson sampling
+- [ ] Load testing for API endpoints
+- [ ] Security audit of new endpoints
+- [ ] Add code coverage reporting
+- [ ] Set up staging environment
+- [ ] Implement automated regression testing
+
+---
+
 ## 🎉 Summary
 
 The SIGNAL platform has been successfully restructured with:

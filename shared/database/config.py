@@ -1,6 +1,8 @@
 """
 Database configuration and session management.
+Optimized for localhost development.
 """
+import os
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
@@ -19,13 +21,28 @@ class Base(DeclarativeBase):
     pass
 
 
-# Create async engine
+# Database connection pool settings (optimized for localhost)
+DB_POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "10"))
+DB_MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "20"))
+DB_POOL_TIMEOUT = int(os.getenv("DB_POOL_TIMEOUT", "30"))
+DB_POOL_RECYCLE = int(os.getenv("DB_POOL_RECYCLE", "3600"))
+
+# Create async engine with localhost-optimized settings
 engine = create_async_engine(
     settings.database_url,
     echo=settings.debug,
-    pool_pre_ping=True,
-    pool_size=20,
-    max_overflow=10,
+    pool_pre_ping=True,  # Verify connections before using
+    pool_size=DB_POOL_SIZE,  # Connection pool size (lower for localhost)
+    max_overflow=DB_MAX_OVERFLOW,  # Max overflow connections
+    pool_timeout=DB_POOL_TIMEOUT,  # Timeout for getting connection from pool
+    pool_recycle=DB_POOL_RECYCLE,  # Recycle connections after N seconds
+    connect_args={
+        "command_timeout": 60,  # Command timeout in seconds
+        "server_settings": {
+            "application_name": "signal-platform-dev",  # Identify connection
+            "jit": "off",  # Disable JIT for development (faster for small queries)
+        }
+    }
 )
 
 # Create async session factory

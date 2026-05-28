@@ -4,8 +4,10 @@ Agent Trigger Service
 Provides unified interface for triggering all agents with proper logging.
 """
 
+import asyncio
 import uuid
 import time
+from dataclasses import asdict
 from typing import Dict, Optional, List
 from datetime import datetime
 from enum import Enum
@@ -723,35 +725,341 @@ class AgentTriggerService:
             return "warm"
         return "cool"
 
-    def _bidders_for_topic(self, seed: str) -> List[str]:
-        return [p for p in BID_PLATFORMS if (hash(seed + p) % 5) > 1] or ["google"]
+    def _bidders_for_topic(
+        self, result: Dict, google_keywords: List[Dict]
+    ) -> List[str]:
+        """Infer active bidders from Tavily result URL and research keywords."""
+        bidders: List[str] = []
+        url = (result.get("url") or "").lower()
+        if google_keywords:
+            bidders.append("google")
+        if "tiktok.com" in url:
+            bidders.append("tiktok")
+        if "bing.com" in url or "microsoft" in url:
+            bidders.append("msft")
+        for kw in google_keywords:
+            comp = (kw.get("competition") or "").lower()
+            if comp in ("high", "medium") and "google" not in bidders:
+                bidders.append("google")
+        return bidders or list(BID_PLATFORMS[:1])
+
+    def _intent_from_thrad_category(self, category: str) -> str:
+        """Map Thrad pipeline category letter to audience intent label."""
+        letter = str(category or "E")[:1].upper()
+        return {
+            "H": "PURCHASE",
+            "G": "COMPARISON",
+            "A": "DISCOVERY",
+            "J": "LOYALTY",
+            "E": "DISCOVERY",
+        }.get(letter, "DISCOVERY")
+
+    def _classify_thrad_category_from_text(self, text: str) -> str:
+        """Lightweight H/G/E/J classifier for fallback inputs."""
+        lower = text.lower()
+        if any(w in lower for w in ("buy", "price", "best", "vs", "compare", "worth")):
+            return "H" if "buy" in lower or "price" in lower else "G"
+        if any(w in lower for w in ("how", "why", "guide", "tips")):
+            return "E"
+        return "E"
+
+    def _extract_query_terms(self, text: str, limit: int = 4) -> List[str]:
+        import re
+
+        words = re.findall(r"\b[a-zA-Z]{4,}\b", (text or "").lower())
+        stop = {
+            "that", "this", "with", "from", "your", "have", "what", "when",
+            "where", "which", "about", "their", "there", "would", "could",
+        }
+        out: List[str] = []
+        for w in words:
+            if w not in stop and w not in out:
+                out.append(w)
+            if len(out) >= limit:
+                break
+        return out
+
+    def _ensure_thrad_inputs(self, query: str, research_results: Dict) -> List[Dict]:
+        """Guarantee thrad_inputs exist by mining Tavily + research payloads."""
+        existing = list(research_results.get("thrad_inputs") or [])
+        seen = {(x.get("query") or "").lower() for x in existing if x.get("query")}
+        out = list(existing)
+
+        def add(inp: Dict) -> None:
+            q = (inp.get("query") or "").strip().lower()
+            if not q or q in seen:
+                return
+            seen.add(q)
+            out.append(inp)
+
+        for post in research_results.get("reddit_posts", [])[:8]:
+            title = (post.get("title") or "").strip()
+            if not title:
+                continue
+            for kw in (post.get("keywords") or [])[:2]:
+                add({
+                    "query": kw,
+                    "category": self._classify_thrad_category_from_text(title),
+                    "confidence": float(post.get("relevance_score", 0.6)),
+                    "source": "reddit",
+                    "context": title[:160],
+                })
+            add({
+                "query": title[:80],
+                "category": self._classify_thrad_category_from_text(title),
+                "confidence": float(post.get("relevance_score", 0.65)),
+                "source": "reddit",
+                "context": (post.get("content") or "")[:160],
+            })
+
+        for kw in research_results.get("google_keywords", [])[:10]:
+            keyword = (kw.get("keyword") or "").strip()
+            if keyword:
+                add({
+                    "query": keyword,
+                    "category": "H" if kw.get("search_intent") == "transactional" else "G",
+                    "confidence": float(kw.get("relevance_to_gymshark", 0.7)),
+                    "source": "google_keywords",
+                    "context": f"Google Ads · {kw.get('match_type', 'phrase')} match",
+                })
+
+        for seo in research_results.get("seo_keywords", [])[:8]:
+            keyword = (seo.get("keyword") or "").strip()
+            if keyword:
+                add({
+                    "query": keyword,
+                    "category": "E" if seo.get("intent") == "informational" else "H",
+                    "confidence": float(seo.get("confidence", 0.6)),
+                    "source": "seo",
+                    "context": f"SEO · {seo.get('source', 'research')}",
+                })
+
+        for idea in research_results.get("content_ideas", [])[:5]:
+            topic = (idea.get("topic") or "").strip()
+            angle = (idea.get("angle") or "").strip()
+            if topic or angle:
+                add({
+                    "query": topic or angle,
+                    "category": "G",
+                    "confidence": float(idea.get("opportunity_score", 0.65)),
+                    "source": "content_ideas",
+                    "context": angle[:160] if angle else topic[:160],
+                })
+
+        for r in research_results.get("results", [])[:10]:
+            title = (r.get("title") or "").strip()
+            content = (r.get("content") or "")[:300]
+            if not title:
+                continue
+            score = float(r.get("score", 0.5))
+            for term in self._extract_query_terms(f"{title} {content}", 3):
+                add({
+                    "query": term,
+                    "category": self._classify_thrad_category_from_text(title),
+                    "confidence": min(0.95, score + 0.15),
+                    "source": "tavily",
+                    "context": title[:160],
+                })
+            add({
+                "query": title[:90],
+                "category": self._classify_thrad_category_from_text(title + content),
+                "confidence": min(0.95, score + 0.2),
+                "source": "tavily",
+                "context": content[:160],
+            })
+
+        if len(out) < 3 and query:
+            add({
+                "query": query,
+                "category": "H",
+                "confidence": 0.75,
+                "source": "tavily",
+                "context": (research_results.get("answer") or "")[:160],
+            })
+
+        research_results["thrad_inputs"] = out
+        return out
+
+    def _audience_item_from_payload(
+        self,
+        display_q: str,
+        classify_text: str,
+        source: str,
+        confidence: float,
+        thrad_cat: str,
+    ) -> Dict:
+        """Build one Section B row with DisBERT classification."""
+        classification = self.disbert_integrator.classify_query_with_disbert(classify_text)
+        strategy = self.disbert_integrator.get_google_ads_keywords_for_classification(
+            classification
+        )
+        commercial = float(strategy.commercial_intent) if strategy else 0.5
+        ingestion = self.disbert_integrator.get_ingestion_rule_for_classification(
+            classification
+        )
+        ingest_priority = float(ingestion.ingestion_priority) if ingestion else 5.0
+        intent = self._intent_from_thrad_category(thrad_cat)
+        if commercial >= 0.8:
+            intent = "PURCHASE"
+        elif commercial >= 0.65:
+            intent = "COMPARISON"
+
+        return {
+            "q": display_q[:140],
+            "intent": intent,
+            "vol": round(confidence * 10, 1),
+            "trend": "up" if confidence >= 0.55 else "flat",
+            "adRank": round(4 + commercial * 5, 1),
+            "ctxScore": int(min(99, 40 + ingest_priority * 5 + confidence * 20)),
+            "source": source,
+            "thrad_category": thrad_cat,
+            "disbert_classification": (
+                strategy.classification_name
+                if strategy
+                else classification.name.lower()
+            ),
+            "commercial_intent": round(commercial, 2),
+        }
+
+    def _audience_queries_from_research(
+        self, query: str, research_results: Dict, answer: str
+    ) -> List[Dict]:
+        """Section B: fill from Thrad inputs + Reddit, SEO, Google, Tavily research."""
+        self._ensure_thrad_inputs(query, research_results)
+        thrad_inputs = research_results.get("thrad_inputs") or []
+
+        queries: List[Dict] = []
+        seen: set = set()
+
+        def push(item: Dict) -> None:
+            key = (item.get("q") or "").lower().strip()
+            if not key or key in seen:
+                return
+            seen.add(key)
+            queries.append(item)
+
+        for ti in sorted(
+            thrad_inputs,
+            key=lambda x: float(x.get("confidence", 0)),
+            reverse=True,
+        ):
+            raw_query = (ti.get("query") or "").strip()
+            context = (ti.get("context") or "").strip()
+            if not raw_query and not context:
+                continue
+            if context and (len(raw_query) < 24 or " " not in raw_query):
+                display_q = context[:140]
+            else:
+                display_q = raw_query[:140]
+            classify_text = raw_query if len(raw_query) > 8 else f"{raw_query} {context}".strip()
+            push(
+                self._audience_item_from_payload(
+                    display_q=display_q,
+                    classify_text=classify_text,
+                    source=ti.get("source", "thrad"),
+                    confidence=float(ti.get("confidence", 0.7)),
+                    thrad_cat=str(ti.get("category", "E"))[:1].upper(),
+                )
+            )
+
+        if answer and len(queries) < 12:
+            for sentence in [s.strip() for s in answer.replace("?", "?\n").split("\n") if s.strip()][:3]:
+                if len(sentence) < 20:
+                    continue
+                push(
+                    self._audience_item_from_payload(
+                        display_q=sentence[:140],
+                        classify_text=sentence,
+                        source="tavily_answer",
+                        confidence=0.78,
+                        thrad_cat="E",
+                    )
+                )
+
+        return queries[:12]
+
+    def _trace_lines_from_research(
+        self,
+        query: str,
+        answer: str,
+        raw_results: List[Dict],
+        trending_topics: List[Dict],
+        disbert_segments: List,
+        high_value_segments: List,
+        execution_time_ms: int,
+        audience_query_count: int = 0,
+    ) -> List[Dict]:
+        """Plain-English lines for Overmind trace terminal."""
+        lines = [
+            {"msg": f'Scanning Tavily for "{query}"…', "tone": "work"},
+            {
+                "msg": f"Received {len(raw_results)} sources in {execution_time_ms}ms.",
+                "tone": "ok",
+            },
+        ]
+        if answer:
+            lines.append({"msg": answer[:220], "tone": "info"})
+        for t in trending_topics[:8]:
+            lines.append({
+                "msg": f"Topic indexed: {t.get('kw', '')[:72]} ({t.get('growth', 0):+}%)",
+                "tone": "ok" if t.get("growth", 0) >= 15 else "info",
+            })
+        if audience_query_count:
+            lines.append({
+                "msg": f"Section B: {audience_query_count} Thrad inputs · DisBERT classified.",
+                "tone": "ok",
+            })
+        if disbert_segments:
+            lines.append({
+                "msg": f"DisBERT mapped {len(disbert_segments)} segments from Tavily fields.",
+                "tone": "ok",
+            })
+        for seg in high_value_segments[:5]:
+            lines.append({
+                "msg": f"High-value {seg.classification.value}: {', '.join(seg.tavily_fields)}",
+                "tone": "info",
+            })
+        return lines
 
     def _trending_topics_from_results(
-        self, query: str, results: List[Dict], answer: str = ""
+        self,
+        query: str,
+        results: List[Dict],
+        answer: str = "",
+        google_keywords: Optional[List[Dict]] = None,
     ) -> List[Dict]:
         trending_topics = []
+        google_keywords = google_keywords or []
         for i, result in enumerate(results[:10]):
             title = result.get("title") or query
-            growth = 5 + (hash(title) % 55) - 10
-            spark = [
-                10 + (hash(title + str(j)) % 20) for j in range(12)
-            ]
+            score = float(result.get("score") or 0.5)
+            growth = int(round((score - 0.45) * 80))
+            relevance = min(99, max(1, int(score * 100)))
+            base = max(8, int(score * 40))
+            spark = [base + int(score * 6 * (j / 11)) for j in range(12)]
+            vol_k = max(1, int(score * 220))
             trending_topics.append({
                 "id": f"tavily_{i}_{int(time.time())}",
                 "kw": title[:120],
                 "growth": growth,
-                "vol": f"{40 + (hash(title) % 160)}K",
+                "vol": f"{vol_k}K",
                 "intensity": self._intensity_from_growth(growth),
                 "src": ["T"],
                 "spark": spark,
                 "detail": {
-                    "relevance": min(99, 65 + (hash(title) % 35)),
+                    "relevance": relevance,
                     "vol12": spark,
-                    "bidders": self._bidders_for_topic(title),
+                    "bidders": self._bidders_for_topic(result, google_keywords),
                     "attribution": [
-                        {"src": "Tavily /search", "w": 0.55},
-                        {"src": answer[:40] + "…" if answer else "Tavily answer", "w": 0.25},
-                        {"src": result.get("url", "")[:48] or "web", "w": 0.2},
+                        {"src": "Tavily /search", "w": round(score, 2)},
+                        {
+                            "src": (answer[:48] + "…") if answer and len(answer) > 48 else (answer or "Tavily answer"),
+                            "w": round(max(0.1, 1.0 - score) * 0.5, 2),
+                        },
+                        {
+                            "src": result.get("url", "")[:56] or "source",
+                            "w": round(0.15 + (1 - score) * 0.2, 2),
+                        },
                     ],
                     "tavily_url": result.get("url"),
                     "tavily_snippet": (result.get("content") or "")[:280],
@@ -801,51 +1109,75 @@ class AgentTriggerService:
                     "title": r.title,
                     "url": r.url,
                     "content": r.content,
+                    "score": r.score,
                 }
                 for r in response.results
             ]
             if not raw_results:
                 raise ValueError("Tavily returned no results for this query")
 
+            from services.intelligence.tavily_research import GymsharkTavilyResearch
+
+            research_service = GymsharkTavilyResearch(tavily_api_key=settings.tavily_api_key)
+            comprehensive = await asyncio.to_thread(
+                research_service.perform_comprehensive_research,
+                base_query=query,
+                max_results_per_source=min(max_results, 10),
+                time_range="month",
+            )
+
+            google_keywords = [asdict(kw) for kw in comprehensive.google_keywords]
+            seo_keywords = [
+                {
+                    "keyword": kw.keyword,
+                    "intent": kw.intent,
+                    "volume": kw.search_volume,
+                    "confidence": kw.confidence,
+                    "source": kw.source,
+                }
+                for kw in comprehensive.seo_keywords
+            ]
+            thrad_inputs = [
+                {
+                    "query": inp.query,
+                    "category": inp.category,
+                    "confidence": inp.confidence,
+                    "source": inp.source,
+                    "context": inp.context,
+                }
+                for inp in comprehensive.thrad_inputs
+            ]
+            keywords = [
+                {"keyword": kw.get("keyword", ""), "volume": kw.get("bid_suggestion")}
+                for kw in google_keywords
+                if kw.get("keyword")
+            ]
+            for seo in seo_keywords:
+                if seo.get("keyword"):
+                    keywords.append({
+                        "keyword": seo["keyword"],
+                        "volume": seo.get("volume"),
+                    })
+
             research_results = {
-                "answer": response.answer,
+                "answer": response.answer or comprehensive.summary,
                 "query": response.query,
                 "results": raw_results,
-                "keywords": [
-                    {"keyword": query.lower(), "volume": 1000 + hash(query) % 500},
-                    {"keyword": f"best {query.lower()}", "volume": 500 + hash(query) % 300},
-                ],
-                "reddit_posts": [],
-                "seo_keywords": [
-                    {"keyword": query.lower(), "intent": "transactional", "volume": 1000},
-                ],
-                "google_keywords": [
-                    {
-                        "keyword": query.lower(),
-                        "match_type": "phrase",
-                        "bid_suggestion": 2.50,
-                        "search_intent": "transactional",
-                    },
-                ],
-                "thrad_inputs": [
-                    {"query": query.lower(), "category": "H", "confidence": 0.85, "source": "tavily"},
-                ],
-                "content_ideas": [
-                    {
-                        "topic": query.title(),
-                        "angle": (response.answer or "")[:120],
-                        "target_audience": "18-34",
-                        "platform": "google",
-                        "content_type": "search",
-                        "keywords": [query.lower()],
-                    }
-                ],
+                "keywords": keywords,
+                "reddit_posts": [asdict(p) for p in comprehensive.reddit_posts],
+                "seo_keywords": seo_keywords,
+                "google_keywords": google_keywords,
+                "thrad_inputs": thrad_inputs,
+                "content_ideas": [asdict(idea) for idea in comprehensive.content_ideas],
             }
             
             execution_time_ms = int((time.time() - start_time) * 1000)
             
             trending_topics = self._trending_topics_from_results(
-                query, raw_results, response.answer or ""
+                query,
+                raw_results,
+                response.answer or "",
+                google_keywords=google_keywords,
             )
             
             # Automatically map Tavily fields to DisBERT segments
@@ -869,15 +1201,37 @@ class AgentTriggerService:
             # Get high-value segments (H, J, E)
             high_value_segments = tavily_to_disbert_mapper.get_high_value_segments(research_results)
             
-            # Log to agent logger
+            audience_queries = self._audience_queries_from_research(
+                query, research_results, response.answer or ""
+            )
+            if audience_queries:
+                agent_logger.log_analyze(
+                    agent="THRAD_BERT",
+                    analysis_type="Section B audience queries",
+                    result=f"{len(audience_queries)} DisBERT-classified Thrad inputs",
+                )
+            trace_lines = self._trace_lines_from_research(
+                query,
+                response.answer or "",
+                raw_results,
+                trending_topics,
+                disbert_segments,
+                high_value_segments,
+                execution_time_ms,
+                audience_query_count=len(audience_queries),
+            )
+
             agent_logger.log_analyze(
                 agent="TAVILY_RESEARCH",
                 analysis_type=f"Tavily research for {query}",
-                result=f"Found {len(trending_topics)} trending topics, {len(disbert_segments)} DisBERT segments"
+                result=f"Found {len(trending_topics)} topics, {len(audience_queries)} AI queries",
             )
-            
-            # Skip database logging for now (requires greenlet)
-            # await agent_execution_logger.log_execution(...)
+            for t in trending_topics[:5]:
+                agent_logger.log_monitor(
+                    agent="TAVILY_RESEARCH",
+                    metric=t.get("kw", "topic")[:48],
+                    value=f"+{t.get('growth', 0)}% relevance {t.get('detail', {}).get('relevance', 0)}",
+                )
             
             return AgentTriggerResult(
                 success=True,
@@ -887,6 +1241,10 @@ class AgentTriggerService:
                     "query": query,
                     "answer": response.answer,
                     "trending_topics": trending_topics,
+                    "audience_queries": audience_queries,
+                    "thrad_inputs": research_results.get("thrad_inputs", []),
+                    "trace_lines": trace_lines,
+                    "agent_logs": agent_logger.get_logs_dict(25),
                     "total_results": len(research_results.get("results", [])),
                     "keywords": research_results.get("keywords", []) if extract_keywords else [],
                     "disbert_segments": {

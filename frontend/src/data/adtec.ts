@@ -175,9 +175,8 @@ export const traceScripts: Record<string, TraceLine[]> = {
     { msg: "6 data sources online. TikTok is rate-limited right now.", tone: "warn" },
   ],
   intel: [
-    { msg: "Scanning the web for fresh Gymshark market signals…", tone: "work" },
-    { msg: "Found 14 trending topics across 6 sources.", tone: "ok" },
-    { msg: "Scrunch leggings are the fastest mover — up 34% this week.", tone: "info" },
+    { msg: "Market Intelligence ready — run Tavily Research to populate Section A & B.", tone: "info" },
+    { msg: "Use the search box: e.g. gymshark leggings trends 2026", tone: "work" },
   ],
   strategy: [
     { msg: "Building this quarter's funnel from 48 campaign records.", tone: "work" },

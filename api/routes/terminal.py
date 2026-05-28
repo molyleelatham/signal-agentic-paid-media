@@ -5,8 +5,9 @@ Integrates with actual Gymshark database data
 """
 
 from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Dict, Optional, Literal
+from decimal import Decimal
 from datetime import datetime, timedelta
 import random
 import numpy as np
@@ -16,7 +17,8 @@ from sqlalchemy import select
 from shared.database import get_async_session
 from shared.models.client import Client, ClientPlatform
 from shared.models.campaign import Campaign, CampaignPerformance
-from shared.models.analytics import EfficiencyMetrics, ChannelMapping, AdstockDecay
+from shared.models.analytics import EfficiencyMetrics, ChannelMapping
+from shared.models.intelligence import AdstockDecay
 from services.common import agent_logger, agent_execution_logger
 
 router = APIRouter(prefix="/terminal", tags=["terminal"])
@@ -59,12 +61,38 @@ class TimelineData(BaseModel):
 
 
 class Scenario(BaseModel):
-    name: Literal["conservative", "moderate", "growth"]
+    name: Literal["conservative", "moderate", "growth", "flexible"]
     roas: float
-    risk_level: Literal["low", "medium", "high"]
+    risk_level: Literal["low", "medium", "high", "flexible"]
     pillar_allocation: Dict[str, float]
     channel_allocation: Dict[str, float]
     expected_return: float
+
+
+class BudgetAllocateRequest(BaseModel):
+    total_budget: float = Field(..., gt=0)
+    awareness: float = Field(..., ge=0, le=100)
+    consideration: float = Field(..., ge=0, le=100)
+    performance: float = Field(..., ge=0, le=100)
+    channel_weights: Optional[Dict[str, float]] = None
+
+
+class ChannelAllocationRow(BaseModel):
+    channel: str
+    budget: float
+    percentage: float
+    expected_leads: int
+    expected_cpa: float
+    funnel_stage: str
+    risk_level: str
+
+
+class BudgetAllocateResponse(BaseModel):
+    total_budget: float
+    funnel_allocation: Dict[str, float]
+    channel_allocations: List[ChannelAllocationRow]
+    summary: Dict[str, float]
+    recommendations: List[str] = []
 
 
 class IntelligenceResult(BaseModel):
@@ -300,7 +328,15 @@ class GymsharkDataGenerator:
                 pillar_allocation={"awareness": 20, "consideration": 30, "performance": 50},
                 channel_allocation={ch: alloc * 1.1 for ch, alloc in channel_alloc.items()},
                 expected_return=GYMSHARK_TOTAL_BUDGET * 3.8
-            )
+            ),
+            "flexible": Scenario(
+                name="flexible",
+                roas=3.4,
+                risk_level="flexible",
+                pillar_allocation={"awareness": 30, "consideration": 35, "performance": 35},
+                channel_allocation=channel_alloc,
+                expected_return=GYMSHARK_TOTAL_BUDGET * 3.4,
+            ),
         }
     
     @staticmethod
@@ -724,9 +760,111 @@ async def get_budget_scenarios(
     return GymsharkDataGenerator.generate_scenarios(channel_mappings)
 
 
+@router.post("/budget-allocate", response_model=BudgetAllocateResponse)
+async def allocate_budget_flexible(request: BudgetAllocateRequest) -> BudgetAllocateResponse:
+    """
+    Flexible budget allocation — recompute channel split from funnel pillars
+    and optional per-channel weight overrides (percentages, sum ~100).
+    """
+    from services.planning.scenario_model import (
+        ScenarioModelingEngine,
+        FunnelAllocation,
+        ChannelType,
+    )
+
+    total = request.awareness + request.consideration + request.performance
+    if not (99 <= total <= 101):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Funnel allocation must sum to 100%, got {total:.1f}%",
+        )
+
+    funnel = FunnelAllocation(
+        awareness=request.awareness,
+        consideration=request.consideration,
+        performance=request.performance,
+    )
+    engine = ScenarioModelingEngine()
+    scenario = engine.model_scenario(
+        total_budget=Decimal(str(request.total_budget)),
+        funnel_allocation=funnel,
+        selected_channels=[
+            ChannelType.META,
+            ChannelType.GOOGLE,
+            ChannelType.TIKTOK,
+            ChannelType.MICROSOFT,
+            ChannelType.INSTAGRAM,
+            ChannelType.REDDIT,
+        ],
+    )
+
+    rows: List[ChannelAllocationRow] = []
+    channel_budgets: Dict[str, float] = {}
+
+    for alloc in scenario.channel_allocations:
+        ch = alloc.channel.value
+        channel_budgets[ch] = float(alloc.budget)
+        rows.append(
+            ChannelAllocationRow(
+                channel=ch,
+                budget=float(alloc.budget),
+                percentage=round(float(alloc.budget) / request.total_budget * 100, 1),
+                expected_leads=alloc.expected_leads,
+                expected_cpa=float(alloc.expected_cpa),
+                funnel_stage=alloc.funnel_stage.value,
+                risk_level=alloc.risk_level,
+            )
+        )
+
+    if request.channel_weights:
+        weight_total = sum(request.channel_weights.values())
+        if weight_total <= 0:
+            raise HTTPException(status_code=400, detail="channel_weights must sum above 0")
+        rows = []
+        channel_budgets = {}
+        for ch, pct in request.channel_weights.items():
+            budget = request.total_budget * (pct / weight_total)
+            channel_budgets[ch.lower()] = budget
+            base = next(
+                (r for r in scenario.channel_allocations if r.channel.value == ch.lower()),
+                None,
+            )
+            cpa = float(base.expected_cpa) if base else 4.5
+            leads = int(budget / cpa) if cpa > 0 else 0
+            rows.append(
+                ChannelAllocationRow(
+                    channel=ch.lower(),
+                    budget=round(budget, 2),
+                    percentage=round(pct / weight_total * 100, 1),
+                    expected_leads=leads,
+                    expected_cpa=cpa,
+                    funnel_stage=base.funnel_stage.value if base else "awareness",
+                    risk_level=base.risk_level if base else "medium",
+                )
+            )
+
+    return BudgetAllocateResponse(
+        total_budget=request.total_budget,
+        funnel_allocation={
+            "awareness": request.awareness,
+            "consideration": request.consideration,
+            "performance": request.performance,
+        },
+        channel_allocations=rows,
+        summary={
+            "total_expected_leads": float(scenario.expected_leads),
+            "total_expected_revenue": float(scenario.expected_revenue),
+            "overall_roas": float(scenario.expected_roas),
+            "risk_score": float(scenario.risk_score),
+            "diversification_confidence": float(scenario.confidence),
+        },
+        recommendations=list(scenario.recommendations or []),
+    )
+
+
 @router.get("/budget-scenarios/{scenario_name}")
 async def get_scenario_detail(
-    scenario_name: Literal["conservative", "moderate", "growth"],
+    scenario_name: Literal["conservative", "moderate", "growth", "flexible"],
     client_id: Optional[str] = None,
     session: AsyncSession = Depends(get_async_session)
 ) -> Scenario:
@@ -765,10 +903,13 @@ async def get_algorithm_scores(
 @router.get("/agent-logs")
 async def get_agent_logs(
     limit: int = 20,
-    client_id: Optional[str] = None
-) -> List[AgentLog]:
-    """Get agent action logs for CLI display"""
-    return GymsharkDataGenerator.generate_agent_logs(limit)
+    client_id: Optional[str] = None,
+) -> List[dict]:
+    """Get live agent action logs for Overmind trace terminal."""
+    entries = agent_logger.get_logs_dict(limit)
+    if entries:
+        return entries
+    return [log.model_dump() for log in GymsharkDataGenerator.generate_agent_logs(limit)]
 
 
 @router.get("/full-dashboard")

@@ -2,8 +2,7 @@
  * API Client for Agent Triggers
  */
 
-/** Empty string uses Vite dev proxy (/api → :8000). Set VITE_API_URL for direct backend. */
-const API_BASE = import.meta.env.VITE_API_URL ?? "";
+import { API_BASE } from "./client";
 
 export interface TriggerResult {
   trigger_id: string;

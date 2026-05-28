@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { OrderFlowTape } from "./OrderFlowTape";
+import { useLiveOrderFlow } from "../../hooks/useLiveOrderFlow";
 import type { CampaignSignal, ChannelMetric } from "../../types/terminal";
 import { CampaignsTab } from "./CampaignsTab";
 import { ChannelsTab } from "./ChannelsTab";
@@ -14,6 +16,11 @@ interface OrderFlowPanelProps {
 export function OrderFlowPanel({ channels, campaigns, className = "" }: OrderFlowPanelProps) {
   const [tab, setTab] = useState<Tab>("channels");
   const [collapsed, setCollapsed] = useState(false);
+  const { channels: liveChannels, campaigns: liveCampaigns, tape } = useLiveOrderFlow(
+    channels,
+    campaigns,
+    !collapsed,
+  );
 
   if (collapsed) {
     return (
@@ -35,7 +42,7 @@ export function OrderFlowPanel({ channels, campaigns, className = "" }: OrderFlo
         >
           ORDER FLOW
         </span>
-        <span className="mt-auto mb-3 h-2 w-2 animate-pulse rounded-full bg-[#00ff88]" />
+        <span className="orderflow-live-dot mt-auto mb-3 h-2 w-2 rounded-full bg-[#00ff88]" />
       </aside>
     );
   }
@@ -53,10 +60,11 @@ export function OrderFlowPanel({ channels, campaigns, className = "" }: OrderFlo
           <h2 className="truncate font-display text-sm font-semibold tracking-wide text-white">
             Order Flow
           </h2>
-          <p className="truncate text-[9px] text-[#666]">Channel tape · campaign signals</p>
+          <p className="truncate text-[9px] text-[#666]">Live tape · channel & signal ticks</p>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
-          <span className="h-2 w-2 animate-pulse rounded-full bg-[#00ff88]" />
+          <span className="orderflow-live-dot h-2 w-2 rounded-full bg-[#00ff88]" />
+          <span className="text-[8px] uppercase tracking-widest text-[#00ff88]">LIVE</span>
           <button
             type="button"
             onClick={() => setCollapsed(true)}
@@ -74,23 +82,25 @@ export function OrderFlowPanel({ channels, campaigns, className = "" }: OrderFlo
           active={tab === "channels"}
           onClick={() => setTab("channels")}
           label="Channels"
-          count={channels.length}
+          count={liveChannels.length}
         />
         <TabButton
           active={tab === "campaigns"}
           onClick={() => setTab("campaigns")}
           label="Campaigns"
-          count={campaigns.length}
+          count={liveCampaigns.length}
         />
       </div>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         {tab === "channels" ? (
-          <ChannelsTab channels={channels} />
+          <ChannelsTab channels={liveChannels} />
         ) : (
-          <CampaignsTab campaigns={campaigns} />
+          <CampaignsTab campaigns={liveCampaigns} />
         )}
       </div>
+
+      <OrderFlowTape entries={tape} />
     </aside>
   );
 }

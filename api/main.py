@@ -31,6 +31,7 @@ from api.routes.terminal import router as terminal_router
 # from api.routes.chat import router as chat_router
 from services.common import agent_trigger_service
 from api.routes.agent_triggers import router as agent_triggers_router
+from api.routes.connectors import router as connectors_router
 print(f"Agent triggers router loaded: {agent_triggers_router}")
 
 
@@ -169,6 +170,13 @@ app.add_middleware(
 app.include_router(intelligence_router)
 app.include_router(terminal_router)
 app.include_router(agent_triggers_router, prefix="/api/v1/agents")
+app.include_router(connectors_router)
+
+
+@app.get("/api/v1/health", response_model=HealthResponse)
+async def health_check_v1():
+    """Health check (versioned path for frontend)."""
+    return await health_check()
 
 
 # Health check endpoint
@@ -182,6 +190,16 @@ async def health_check():
             "overmind": "configured" if settings.overmind_api_key else "not_configured",
             "tavily": "configured" if settings.tavily_api_key else "not_configured",
             "thrad": "configured" if settings.thrad_api_key else "not_configured",
+            "meta_mcp": "configured" if settings.meta_ads_access_token else "demo",
+            "google_ads": (
+                "configured"
+                if settings.google_ads_developer_token and settings.google_ads_customer_id
+                else "demo"
+            ),
+            "meta_ads_manager": (
+                "configured" if settings.meta_ads_access_token else "not_configured"
+            ),
+            "reddit": "configured" if settings.tavily_api_key else "not_configured",
             "cursor_composer": (
                 "configured" if settings.cursor_api_key else "not_configured"
             ),
@@ -573,24 +591,6 @@ async def trigger_intelligence_scan(category: str, competitors: Optional[List[st
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Intelligence scan failed: {str(e)}"
         )
-
-
-# Tavily research trigger endpoint (directly in main.py for now)
-class TavilyResearchRequest(BaseModel):
-    query: str
-    max_results: int = 10
-    extract_keywords: bool = True
-
-
-@app.post("/api/v1/agents/trigger/tavily-research")
-async def trigger_tavily_research(request: TavilyResearchRequest):
-    """Trigger Tavily research for trending topics."""
-    result = await agent_trigger_service.trigger_tavily_research(
-        query=request.query,
-        max_results=request.max_results,
-        extract_keywords=request.extract_keywords
-    )
-    return result
 
 
 # Error handlers

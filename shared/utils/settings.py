@@ -36,6 +36,17 @@ class Settings(BaseSettings):
     overmind_api_key: Optional[str] = None
     openai_api_key: Optional[str] = None
 
+    # Meta MCP + Marketing API
+    meta_mcp_endpoint: str = "mcp://meta/ads"
+    meta_ads_access_token: Optional[str] = None
+
+    # Google Ads API
+    google_ads_developer_token: Optional[str] = None
+    google_ads_client_id: Optional[str] = None
+    google_ads_client_secret: Optional[str] = None
+    google_ads_refresh_token: Optional[str] = None
+    google_ads_customer_id: Optional[str] = None
+
     # Cursor Agent SDK
     cursor_api_key: Optional[str] = None
     cursor_model: str = "composer-2.5"

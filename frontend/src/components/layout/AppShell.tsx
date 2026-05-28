@@ -1,6 +1,5 @@
-import { useEffect, useState } from "react";
-import { pages, traceScripts, type PageId } from "../../data/adtec";
-import { adtecLog } from "../../lib/trace";
+import { useState } from "react";
+import { pages, type PageId } from "../../data/adtec";
 import { useTerminalData } from "../../hooks/useTerminalData";
 import { BudgetScenarioPage } from "../../pages/BudgetScenarioPage";
 import { CampaignPerformancePage } from "../../pages/CampaignPerformancePage";
@@ -50,10 +49,6 @@ export function AppShell() {
   const [active, setActive] = useState<PageId>("intel");
   const { data } = useTerminalData();
   const page = pages.find((p) => p.id === active)!;
-
-  useEffect(() => {
-    adtecLog(traceScripts[active] || []);
-  }, [active]);
 
   const channels = data?.channel_metrics ?? [];
   const campaigns = data?.campaign_signals ?? [];

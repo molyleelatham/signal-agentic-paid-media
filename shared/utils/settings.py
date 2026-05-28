@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     """Application settings."""
     
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(".env", ".env.local"),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore"
@@ -34,36 +34,23 @@ class Settings(BaseSettings):
     tavily_api_key: Optional[str] = None
     thrad_api_key: Optional[str] = None
     overmind_api_key: Optional[str] = None
-    
-    # Platform APIs
-    meta_api_key: Optional[str] = None
-    meta_api_secret: Optional[str] = None
-    google_ads_developer_token: Optional[str] = None
-    google_ads_client_id: Optional[str] = None
-    google_ads_client_secret: Optional[str] = None
-    
-    # JWT
-    jwt_secret_key: str = "change-this-in-production"
-    jwt_algorithm: str = "HS256"
-    jwt_expiration_minutes: int = 1440
-    
+    openai_api_key: Optional[str] = None
+
+    # Cursor Agent SDK
+    cursor_api_key: Optional[str] = None
+    cursor_model: str = "composer-2.5"
+    cursor_agent_cwd: Optional[str] = None
+
     # Token Settings
     token_initial_supply: float = 1000000.0
     token_decimal_places: int = 8
     token_issuance_rate: float = 0.1
     token_burn_rate: float = 0.05
-    
+
     # Celery
     celery_broker_url: str = "redis://localhost:6379/1"
     celery_result_backend: str = "redis://localhost:6379/2"
-    
-    # Monitoring
-    sentry_dsn: Optional[str] = None
-    prometheus_port: int = 9090
-    
-    # Modal (GPU Inference)
-    modal_token: Optional[str] = None
-    
+
     # Overmind
     overmind_project_id: Optional[str] = None
 

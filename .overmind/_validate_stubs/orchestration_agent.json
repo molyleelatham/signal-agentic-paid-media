@@ -1,0 +1,12 @@
+{
+  "test_cases": [
+    {
+      "input": {
+        "auction_context": "{\"platform\": \"google\", \"competition_level\": \"low\"}",
+        "campaign_context": "{\"campaign_id\": \"camp_002\", \"budget\": 10000}",
+        "intelligence_data": "{\"signals\": [\"rising demand\"]}",
+        "performance_history": "[]"
+      }
+    }
+  ]
+}

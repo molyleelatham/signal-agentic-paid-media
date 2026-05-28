@@ -1,0 +1,9 @@
+#  Overmind agent registry — use: overmind agent register / list / remove / update 
+
+agents = [
+    {name = "bid_strategy_agent", entrypoint = "services.agents.overmind.bid_strategy_entrypoint:run"},
+    {name = "content_brief_agent", entrypoint = "services.agents.overmind.content_brief_entrypoint:run"},
+    {name = "creative_optimization_agent", entrypoint = "services.agents.overmind.creative_optimization_entrypoint:run"},
+    {name = "market_analysis_agent", entrypoint = "services.agents.overmind.market_analysis_entrypoint:run"},
+    {name = "orchestration_agent", entrypoint = "services.agents.overmind.orchestration_entrypoint:run"},
+]

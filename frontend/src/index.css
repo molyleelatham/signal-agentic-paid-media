@@ -1,0 +1,163 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-0: #0a0a0a;
+  --bg-1: #1a1a1a;
+  --bg-2: #2a2a2a;
+  --bg-3: #3a3a3a;
+  --line: #1f1f1f;
+  --cyan: #00bfff;
+  --green: #00ff00;
+  --amber: #ffff00;
+  --red: #ff0000;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  font-size: 13px;
+  background: #000;
+  color: #fff;
+  -webkit-font-smoothing: antialiased;
+}
+
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+*::-webkit-scrollbar-track {
+  background: var(--line);
+}
+*::-webkit-scrollbar-thumb {
+  background: #444;
+}
+
+.panel-header {
+  @apply flex min-w-0 items-center justify-between px-3 py-2 border-b border-[#1f1f1f] bg-[#111];
+}
+.panel-title {
+  @apply text-[10px] tracking-[0.2em] uppercase text-[#888] font-medium;
+}
+
+.signal-buy {
+  color: var(--green);
+}
+.signal-hold {
+  color: var(--amber);
+}
+.signal-stop {
+  color: var(--red);
+}
+
+/* ---- legacy adtec design system ---- */
+.eyebrow {
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: #666;
+}
+
+.dot {
+  display: inline-block;
+  border-radius: 50%;
+  flex: none;
+}
+.dot.active {
+  background: #00ff88;
+  box-shadow: 0 0 8px rgba(0, 255, 136, 0.7);
+  animation: pulse 2s infinite;
+}
+.dot.inactive {
+  background: #ff4444;
+}
+.dot.degraded {
+  background: #ffb800;
+  animation: blink 0.7s steps(2, start) infinite;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border-radius: 2px;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+}
+.badge-up {
+  color: #00ff88;
+  background: rgba(0, 255, 136, 0.12);
+}
+.badge-down {
+  color: #ff4444;
+  background: rgba(255, 68, 68, 0.12);
+}
+
+.btn {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 8px 14px;
+  border-radius: 3px;
+  cursor: pointer;
+  border: 1px solid #2a2a2a;
+  background: #111;
+  color: #fff;
+  transition: all 0.15s;
+}
+.btn:hover {
+  border-color: #666;
+  background: #161616;
+}
+.btn-primary {
+  background: #000;
+  border: 1px solid #fff;
+}
+.btn-primary:hover {
+  background: #fff;
+  color: #000;
+}
+
+.font-display {
+  font-family: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+@keyframes blink {
+  50% {
+    opacity: 0.2;
+  }
+}
+@keyframes flash {
+  0% {
+    background: rgba(255, 184, 0, 0.45);
+  }
+  100% {
+    background: transparent;
+  }
+}

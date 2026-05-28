@@ -168,7 +168,7 @@ class PerformanceMetric(Base):
     metric_value: Mapped[Decimal] = mapped_column(DECIMAL(18, 4), nullable=False)
     metric_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     
-    metadata: Mapped[Optional[dict]] = mapped_column(JSON)
+    meta_data: Mapped[Optional[dict]] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     
     def __repr__(self) -> str:
@@ -195,7 +195,7 @@ class BudgetAllocation(Base):
     alpha: Mapped[Optional[float]] = mapped_column(DECIMAL(10, 4))
     beta: Mapped[Optional[float]] = mapped_column(DECIMAL(10, 4))
     
-    metadata: Mapped[Optional[dict]] = mapped_column(JSON)
+    meta_data: Mapped[Optional[dict]] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     
     def __repr__(self) -> str:
@@ -205,7 +205,7 @@ class BudgetAllocation(Base):
 class AttentionTokenTransaction(Base):
     """Attention token transaction records."""
     
-    __tablename__ = "token_transactions"
+    __tablename__ = "attention_token_transactions"
     
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     client_id: Mapped[str] = mapped_column(String(36), ForeignKey("clients.id"), nullable=False, index=True)
@@ -215,7 +215,7 @@ class AttentionTokenTransaction(Base):
     amount: Mapped[Decimal] = mapped_column(DECIMAL(18, 8), nullable=False)
     balance_after: Mapped[Decimal] = mapped_column(DECIMAL(18, 8), nullable=False)
     
-    metadata: Mapped[Optional[dict]] = mapped_column(JSON)
+    meta_data: Mapped[Optional[dict]] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     
     def __repr__(self) -> str:

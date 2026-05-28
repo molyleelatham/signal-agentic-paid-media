@@ -17,6 +17,7 @@ from shared.database import get_async_session
 from shared.models.client import Client, ClientPlatform
 from shared.models.campaign import Campaign, CampaignPerformance
 from shared.models.analytics import EfficiencyMetrics, ChannelMapping, AdstockDecay
+from services.common import agent_logger, agent_execution_logger
 
 router = APIRouter(prefix="/terminal", tags=["terminal"])
 
@@ -89,6 +90,10 @@ class AgentLog(BaseModel):
     timestamp: str
     agent: str
     action: str
+    campaign: Optional[str] = None
+    channel: Optional[str] = None
+    amount: Optional[float] = None
+    confidence: Optional[float] = None
     result: Optional[str] = None
 
 
@@ -354,38 +359,76 @@ class GymsharkDataGenerator:
     
     @staticmethod
     def generate_agent_logs(limit: int = 20) -> List[AgentLog]:
-        """Generate agent action logs for CLI display"""
-        agents = [
-            "THOMPSON_ALLOCATOR",
-            "ADSTOCK_ENGINE",
-            "OVERMIND_TRACER",
-            "BERT_CLIENT",
-            "TAVILY_CLIENT",
-            "TOKEN_CALCULATOR",
-            "MEDIA_BUYER"
-        ]
-        
-        actions = [
-            "Optimizing Gymshark channel allocations...",
-            "Monitoring saturation levels for Gymshark campaigns...",
-            "Evaluating scenario performance for Gymshark...",
-            "Analyzing Gymshark keyword performance...",
-            "Retrieving market intelligence for fitness apparel...",
-            "Computing Gymshark reward distribution...",
-            "Executing Gymshark campaign adjustments..."
-        ]
-        
+        """Generate agent action logs for CLI display with BUY/HOLD/STOP signals"""
         logs = []
         now = datetime.now()
         
+        # Generate BUY/HOLD/STOP decisions with campaign details
         for i in range(limit):
             timestamp = (now - timedelta(seconds=random.randint(0, 3600))).strftime("%H:%M:%S")
-            logs.append(AgentLog(
-                timestamp=timestamp,
-                agent=random.choice(agents),
-                action=random.choice(actions),
-                result=random.choice(["Success", "Optimized", "Complete", "Updated"])
-            ))
+            
+            # Randomly select agent and action type
+            action_type = random.choice(["BUY", "HOLD", "STOP", "OPTIMIZE", "MONITOR"])
+            agent = random.choice([
+                "THOMPSON_ALLOCATOR",
+                "BID_STRATEGY_AGENT",
+                "ADSTOCK_ENGINE",
+                "OVERMIND_TRACER",
+                "MEDIA_BUYER"
+            ])
+            
+            if action_type in ["BUY", "HOLD", "STOP"]:
+                campaign = random.choice(GYMSHARK_CAMPAIGNS)
+                channel = random.choice(GYMSHARK_CHANNELS).upper()
+                
+                if action_type == "BUY":
+                    amount = random.uniform(1000, 5000)
+                    confidence = random.uniform(0.75, 0.95)
+                    result = f"Executing bid on {channel}"
+                elif action_type == "HOLD":
+                    amount = None
+                    confidence = random.uniform(0.60, 0.85)
+                    result = f"Maintaining current spend on {channel}"
+                else:  # STOP
+                    amount = None
+                    confidence = random.uniform(0.70, 0.90)
+                    result = f"Pausing campaign on {channel}"
+                
+                log_entry = AgentLog(
+                    timestamp=timestamp,
+                    agent=agent,
+                    action=action_type,
+                    campaign=campaign,
+                    amount=amount,
+                    confidence=confidence,
+                    result=result
+                )
+            else:
+                # Generic actions
+                actions = {
+                    "OPTIMIZE": [
+                        "Optimizing Gymshark channel allocations...",
+                        "Adjusting bid strategy...",
+                        "Refining targeting parameters..."
+                    ],
+                    "MONITOR": [
+                        "Monitoring saturation levels for Gymshark campaigns...",
+                        "Tracking performance metrics...",
+                        "Evaluating ROI..."
+                    ]
+                }
+                
+                action = random.choice(actions[action_type])
+                result = random.choice(["Success", "Optimized", "Complete", "Updated"])
+                
+                log_entry = AgentLog(
+                    timestamp=timestamp,
+                    agent=agent,
+                    action=action,
+                    result=result
+                )
+            
+            logs.append(log_entry)
         
         return sorted(logs, key=lambda x: x.timestamp, reverse=True)
     
@@ -500,7 +543,7 @@ async def get_campaign_signals(
     client_id: Optional[str] = None,
     session: AsyncSession = Depends(get_async_session)
 ) -> List[CampaignSignal]:
-    """Get campaign signals (BUY/HOLD/STOP) with confidence scores"""
+    """Get campaign signals (BUY/HOLD/STOP) with confidence scores and log them"""
     # Get Gymshark campaigns
     if client_id:
         result = await session.execute(
@@ -525,7 +568,37 @@ async def get_campaign_signals(
         
         campaigns = [MockCampaign(name) for name in GYMSHARK_CAMPAIGNS]
     
-    return GymsharkDataGenerator.generate_campaign_signals(campaigns)
+    signals = GymsharkDataGenerator.generate_campaign_signals(campaigns)
+    
+    # Log the signals
+    for signal in signals:
+        if signal.signal == "BUY":
+            agent_logger.log_buy(
+                agent="THOMPSON_ALLOCATOR",
+                campaign=signal.name,
+                amount=signal.spend,
+                channel=signal.name.lower(),  # Using signal.name as channel placeholder
+                confidence=signal.confidence,
+                reasoning=f"High confidence BUY signal based on performance"
+            )
+        elif signal.signal == "HOLD":
+            agent_logger.log_hold(
+                agent="THOMPSON_ALLOCATOR",
+                campaign=signal.name,
+                channel=signal.name.lower(),
+                confidence=signal.confidence,
+                reasoning=f"HOLD signal - maintaining current spend"
+            )
+        elif signal.signal == "STOP":
+            agent_logger.log_stop(
+                agent="THOMPSON_ALLOCATOR",
+                campaign=signal.name,
+                channel=signal.name.lower(),
+                confidence=signal.confidence,
+                reasoning=f"STOP signal - pausing campaign due to low performance"
+            )
+    
+    return signals
 
 
 @router.get("/adstock-saturation")
@@ -755,4 +828,55 @@ async def get_full_dashboard(
         "content_gaps": GymsharkDataGenerator.generate_content_gaps(),
         "algorithm_scores": GymsharkDataGenerator.generate_algorithm_scores(),
         "agent_logs": GymsharkDataGenerator.generate_agent_logs(20)
+    }
+
+
+@router.get("/agent-execution-history")
+async def get_agent_execution_history(
+    agent_name: Optional[str] = None,
+    limit: int = 50
+):
+    """Get agent execution history from database."""
+    history = await agent_execution_logger.get_execution_history(
+        agent_name=agent_name,
+        limit=limit
+    )
+    
+    return {
+        "agent_name": agent_name,
+        "limit": limit,
+        "count": len(history),
+        "executions": [
+            {
+                "id": exec.id,
+                "agent_name": exec.agent_name,
+                "agent_type": exec.agent_type,
+                "action": exec.action,
+                "execution_time_ms": exec.execution_time_ms,
+                "tokens_used": exec.tokens_used,
+                "cost_usd": float(exec.cost_usd) if exec.cost_usd else 0.0,
+                "success": exec.success,
+                "error_message": exec.error_message,
+                "execution_date": exec.execution_date.isoformat()
+            }
+            for exec in history
+        ]
+    }
+
+
+@router.get("/agent-execution-stats")
+async def get_agent_execution_stats(
+    agent_name: Optional[str] = None,
+    days: int = 30
+):
+    """Get agent execution statistics."""
+    stats = await agent_execution_logger.get_execution_stats(
+        agent_name=agent_name,
+        days=days
+    )
+    
+    return {
+        "agent_name": agent_name,
+        "days": days,
+        **stats
     }

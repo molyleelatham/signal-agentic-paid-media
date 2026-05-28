@@ -73,6 +73,7 @@ make demo-data     # Populate Gymshark demo data
 ### Overmind
 ```bash
 make overmind-setup # Setup Overmind configuration
+make register-agents # Register agents with Overmind
 ```
 
 ### Server
@@ -173,6 +174,38 @@ Overmind automatically installs skills for Cursor IDE in `.cursor/skills/`:
 - `overmind-generate-spec-and-dataset` - Generate specifications
 - `overmind-optimize-agent` - Optimize agent performance
 - `overmind-register-agent` - Register agents with Overmind
+
+### Register Agents with Overmind
+
+After configuring Overmind, register the SIGNAL platform agents:
+
+```bash
+make register-agents
+```
+
+This will output the Cursor IDE commands to register each agent:
+- `bid_strategy_agent` - Makes strategic bidding decisions
+- `content_brief_agent` - Generates creative briefs
+- `creative_optimization_agent` - Optimizes creative performance
+- `market_analysis_agent` - Analyzes market intelligence
+- `orchestration_agent` - Coordinates all agents
+
+**To register agents in Cursor IDE:**
+1. Run `make register-agents` to see the commands
+2. Copy each `/overmind-register-agent` command
+3. Paste into Cursor IDE command palette
+4. Run each `/overmind-optimize-agent` command after registration
+5. Verify registration at https://platform.overmind.ai
+
+**Agent Policies:**
+Each agent has a policy file in `policies/` documenting:
+- Agent purpose and capabilities
+- Input/output schemas
+- Decision criteria and constraints
+- Integration points
+- Optimization targets
+
+See `policies/README.md` for detailed policy documentation.
 
 ## Database Optimization for Localhost
 

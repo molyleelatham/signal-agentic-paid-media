@@ -31,7 +31,7 @@ class TokenTransaction(Base):
     transaction_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     amount: Mapped[Decimal] = mapped_column(DECIMAL(18, 8), nullable=False)
     balance_after: Mapped[Decimal] = mapped_column(DECIMAL(18, 8), nullable=False)
-    metadata: Mapped[Optional[dict]] = mapped_column(JSON)
+    meta_data: Mapped[Optional[dict]] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     
     def __repr__(self) -> str:

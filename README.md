@@ -19,6 +19,10 @@ uvicorn api.main:app --reload
 # 6. Access API docs
 http://localhost:8000/docs
 
+# 7. Start Bloomberg-style React terminal (optional)
+cd frontend && npm install && npm run dev
+# http://localhost:5173 — Order Flow column + campaign SIGNAL tab
+
 # SIGNAL - Autonomous Media Trading Platform
 
 A sophisticated autonomous media trading platform that uses AI-driven intelligence to execute media buying decisions while keeping humans in the loop for creative and strategic decisions. Features an attention token economy that gamifies financial engineering in media buying.
@@ -117,6 +121,31 @@ pip install -e ".[dev]"
 cp .env.example .env
 # Edit .env with your API keys and configuration
 ```
+
+### LLM split: Cursor agents vs OpenAI (Overmind)
+
+See [docs/LLM_ARCHITECTURE.md](docs/LLM_ARCHITECTURE.md) for the full picture.
+
+| Layer | Provider | Keys |
+|-------|----------|------|
+| **SIGNAL agents** (runtime + Overmind eval harness) | Cursor SDK, **Composer 2.5** | `CURSOR_API_KEY`, `CURSOR_MODEL` |
+| **Overmind** (setup, optimize, analyzer, datagen) | OpenAI via LiteLLM | `OPENAI_API_KEY`, `ANALYZER_MODEL` in `.overmind/.env` |
+| **Overmind tracing** | Overmind platform | `OVERMIND_API_KEY` |
+
+1. Add to `.env.local`:
+```bash
+CURSOR_API_KEY=cursor_...
+CURSOR_MODEL=composer-2.5
+OPENAI_API_KEY=sk-...          # required for overmind setup / optimize
+OVERMIND_API_KEY=ovr_...
+```
+2. Sync into Overmind env:
+```bash
+python scripts/bootstrap_overmind_env.py
+python scripts/test_cursor_sdk.py
+```
+
+**Cursor API** (`/api/v1/cursor/*`): direct Composer access from the app. **Overmind CLI** still uses OpenAI for its internal analyzer — that is expected.
 
 5. Initialize database:
 ```bash

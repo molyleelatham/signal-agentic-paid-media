@@ -9,6 +9,7 @@ from datetime import datetime
 from dataclasses import dataclass
 
 from shared.agents.overmind_integration import BaseAgent, OvermindTracer
+from shared.agents.cursor_integration import CursorComposerService
 
 
 @dataclass
@@ -48,7 +49,8 @@ class MarketAnalysisAgent(BaseAgent):
     def __init__(
         self,
         overmind_tracer: OvermindTracer = None,
-        llm_client: Any = None
+        llm_client: Any = None,
+        cursor_composer: CursorComposerService = None,
     ):
         """
         Initialize market analysis agent.
@@ -56,11 +58,13 @@ class MarketAnalysisAgent(BaseAgent):
         Args:
             overmind_tracer: Overmind tracer instance
             llm_client: LLM client for analysis
+            cursor_composer: Cursor Composer 2.5 service
         """
         super().__init__(
             name="MarketAnalysisAgent",
             overmind_tracer=overmind_tracer,
-            llm_client=llm_client
+            llm_client=llm_client,
+            cursor_composer=cursor_composer,
         )
     
     async def analyze_market_intelligence(

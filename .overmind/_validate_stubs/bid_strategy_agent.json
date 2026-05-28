@@ -1,0 +1,12 @@
+{
+  "test_cases": [
+    {
+      "input": {
+        "auction_context": "{\"platform\": \"meta\", \"competition_level\": \"medium\", \"audience\": \"fitness\"}",
+        "algorithmic_bid": 2.5,
+        "campaign_context": "{\"campaign_id\": \"camp_001\", \"target_cpa\": 25.0, \"goal\": \"conversions\"}",
+        "performance_history": "[]"
+      }
+    }
+  ]
+}

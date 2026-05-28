@@ -1,0 +1,12 @@
+{
+  "test_cases": [
+    {
+      "input": {
+        "gap_topic": "{\"topic\": \"sustainable activewear\", \"priority\": \"high\", \"volume\": 1200}",
+        "platform": "meta",
+        "goal_type": "lead_generation",
+        "competitor_angles": "[\"eco-friendly\", \"performance\"]"
+      }
+    }
+  ]
+}

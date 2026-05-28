@@ -9,6 +9,7 @@ from datetime import datetime
 from enum import Enum
 
 from shared.agents.overmind_integration import BaseAgent, OvermindTracer
+from shared.agents.cursor_integration import CursorComposerService
 from services.agents.content_brief_agent import ContentBriefAgent
 from services.agents.bid_strategy_agent import BidStrategyAgent
 from services.agents.market_analysis_agent import MarketAnalysisAgent
@@ -39,7 +40,8 @@ class OrchestrationAgent(BaseAgent):
         self,
         overmind_tracer: OvermindTracer = None,
         llm_client: Any = None,
-        thrad_auction_integrator: Any = None
+        thrad_auction_integrator: Any = None,
+        cursor_composer: CursorComposerService = None,
     ):
         """
         Initialize orchestration agent.
@@ -48,18 +50,28 @@ class OrchestrationAgent(BaseAgent):
             overmind_tracer: Overmind tracer instance
             llm_client: LLM client for orchestration decisions
             thrad_auction_integrator: Thrad auction integrator for bid orchestration
+            cursor_composer: Cursor Composer 2.5 service for agent LLM calls
         """
         super().__init__(
             name="OrchestrationAgent",
             overmind_tracer=overmind_tracer,
-            llm_client=llm_client
+            llm_client=llm_client,
+            cursor_composer=cursor_composer,
         )
         
-        # Initialize specialized agents
-        self.market_agent = MarketAnalysisAgent(overmind_tracer, llm_client)
-        self.content_agent = ContentBriefAgent(overmind_tracer, llm_client)
-        self.bid_agent = BidStrategyAgent(overmind_tracer, llm_client)
-        self.creative_agent = CreativeOptimizationAgent(overmind_tracer, llm_client)
+        # Initialize specialized agents (share Cursor Composer when configured)
+        self.market_agent = MarketAnalysisAgent(
+            overmind_tracer, llm_client, cursor_composer=cursor_composer
+        )
+        self.content_agent = ContentBriefAgent(
+            overmind_tracer, llm_client, cursor_composer=cursor_composer
+        )
+        self.bid_agent = BidStrategyAgent(
+            overmind_tracer, llm_client, cursor_composer=cursor_composer
+        )
+        self.creative_agent = CreativeOptimizationAgent(
+            overmind_tracer, llm_client, cursor_composer=cursor_composer
+        )
         
         # Initialize Thrad auction integrator
         self.thrad_auction = thrad_auction_integrator
@@ -480,10 +492,25 @@ class OrchestrationAgent(BaseAgent):
             print(f"Using fallback value for priority {priority.value}")
             return fallback_value
     
+    def _bid_decision_fields(self, bid_decision: Any) -> Dict[str, Any]:
+        if hasattr(bid_decision, "recommended_bid"):
+            return {
+                "recommended_bid": bid_decision.recommended_bid,
+                "confidence": bid_decision.confidence,
+                "reasoning": bid_decision.reasoning,
+                "risk_assessment": bid_decision.risk_assessment,
+            }
+        return {
+            "recommended_bid": bid_decision.get("recommended_bid", 0),
+            "confidence": bid_decision.get("confidence", 0),
+            "reasoning": bid_decision.get("reasoning", ""),
+            "risk_assessment": bid_decision.get("risk_assessment", ""),
+        }
+
     def _aggregate_trading_decision(
         self,
         market_insights: List,
-        bid_decision: Dict,
+        bid_decision: Any,
         creative_analysis: Any,
         orchestration_context: Dict
     ) -> Dict:
@@ -499,11 +526,12 @@ class OrchestrationAgent(BaseAgent):
         Returns:
             Aggregated trading decision
         """
+        bid = self._bid_decision_fields(bid_decision)
         return {
-            "final_bid": bid_decision["recommended_bid"],
-            "bid_confidence": bid_decision["confidence"],
-            "bid_reasoning": bid_decision["reasoning"],
-            "risk_assessment": bid_decision["risk_assessment"],
+            "final_bid": bid["recommended_bid"],
+            "bid_confidence": bid["confidence"],
+            "bid_reasoning": bid["reasoning"],
+            "risk_assessment": bid["risk_assessment"],
             "market_insights_count": len(market_insights),
             "market_insights_summary": [insight.summary for insight in market_insights[:3]],
             "creative_analysis_available": creative_analysis is not None,

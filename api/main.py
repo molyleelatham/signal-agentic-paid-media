@@ -17,15 +17,21 @@ from pydantic import BaseModel, Field
 
 from shared.utils.settings import settings
 from shared.agents.overmind_integration import OvermindTracer
+from shared.agents.cursor_integration import CursorComposerService
 from services.agents import OrchestrationAgent
 from services.platform_integration import ThradAuctionIntegrator
 from services.trading.bid_discovery import BidDiscoveryEngine
 from services.analytics.asymmetric_pnl import AttentionTokenCalculator
-from api.routes.demo import router as demo_router
-from api.routes.planning import router as planning_router
-from api.routes.media_buying import router as media_buying_router
+# from api.routes.demo import router as demo_router
+# from api.routes.planning import router as planning_router
+# from api.routes.media_buying import router as media_buying_router
 from api.routes.intelligence import router as intelligence_router
 from api.routes.terminal import router as terminal_router
+# from api.routes.cursor_agent import router as cursor_agent_router
+# from api.routes.chat import router as chat_router
+from services.common import agent_trigger_service
+from api.routes.agent_triggers import router as agent_triggers_router
+print(f"Agent triggers router loaded: {agent_triggers_router}")
 
 
 # Pydantic models for API requests/responses
@@ -97,16 +103,27 @@ async def lifespan(app: FastAPI):
         api_key=settings.overmind_api_key,
         project_id=settings.overmind_project_id
     )
+
+    cursor_composer = CursorComposerService(
+        api_key=settings.cursor_api_key,
+        model=settings.cursor_model,
+        cwd=settings.cursor_agent_cwd,
+    )
     
-    # Initialize orchestration agent
+    # Initialize orchestration agent (Composer 2.5 when CURSOR_API_KEY is set)
     orchestration_agent = OrchestrationAgent(
-        overmind_tracer=overmind_tracer
+        overmind_tracer=overmind_tracer,
+        cursor_composer=cursor_composer,
     )
     
-    # Initialize Thrad auction integrator
-    thrad_auction = ThradAuctionIntegrator(
-        api_key=settings.thrad_api_key
-    )
+    # Initialize Thrad auction integrator (optional)
+    try:
+        thrad_auction = ThradAuctionIntegrator(
+            api_key=settings.thrad_api_key
+        )
+    except ValueError:
+        thrad_auction = None
+        print("Warning: Thrad API key not set, Thrad integration disabled")
     
     # Initialize trading engine
     bid_discovery = BidDiscoveryEngine()
@@ -116,6 +133,7 @@ async def lifespan(app: FastAPI):
     
     # Store in app state
     app.state.overmind_tracer = overmind_tracer
+    app.state.cursor_composer = cursor_composer
     app.state.orchestration_agent = orchestration_agent
     app.state.thrad_auction = thrad_auction
     app.state.bid_discovery = bid_discovery
@@ -145,11 +163,12 @@ app.add_middleware(
 )
 
 # Include routers
-app.include_router(demo_router)
-app.include_router(planning_router)
-app.include_router(media_buying_router)
+# app.include_router(demo_router)
+# app.include_router(planning_router)
+# app.include_router(media_buying_router)
 app.include_router(intelligence_router)
 app.include_router(terminal_router)
+app.include_router(agent_triggers_router, prefix="/api/v1/agents")
 
 
 # Health check endpoint
@@ -162,7 +181,10 @@ async def health_check():
         services={
             "overmind": "configured" if settings.overmind_api_key else "not_configured",
             "tavily": "configured" if settings.tavily_api_key else "not_configured",
-            "thrad": "configured" if settings.thrad_api_key else "not_configured"
+            "thrad": "configured" if settings.thrad_api_key else "not_configured",
+            "cursor_composer": (
+                "configured" if settings.cursor_api_key else "not_configured"
+            ),
         }
     )
 
@@ -340,6 +362,16 @@ async def get_agents_status():
             "creative_optimization_agent": "active"
         },
         "overmind_integration": "enabled" if settings.overmind_api_key else "disabled",
+        "cursor_composer": (
+            app.state.cursor_composer.status()
+            if hasattr(app.state, "cursor_composer")
+            else {"ready": False}
+        ),
+        "llm_backend": (
+            "cursor-composer-2.5"
+            if settings.cursor_api_key
+            else ("openai" if settings.openai_api_key else "fallback")
+        ),
         "total_agents": 5
     }
 
@@ -541,6 +573,24 @@ async def trigger_intelligence_scan(category: str, competitors: Optional[List[st
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Intelligence scan failed: {str(e)}"
         )
+
+
+# Tavily research trigger endpoint (directly in main.py for now)
+class TavilyResearchRequest(BaseModel):
+    query: str
+    max_results: int = 10
+    extract_keywords: bool = True
+
+
+@app.post("/api/v1/agents/trigger/tavily-research")
+async def trigger_tavily_research(request: TavilyResearchRequest):
+    """Trigger Tavily research for trending topics."""
+    result = await agent_trigger_service.trigger_tavily_research(
+        query=request.query,
+        max_results=request.max_results,
+        extract_keywords=request.extract_keywords
+    )
+    return result
 
 
 # Error handlers

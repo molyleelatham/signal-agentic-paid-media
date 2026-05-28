@@ -1,0 +1,11 @@
+{
+  "test_cases": [
+    {
+      "input": {
+        "intelligence_data": "{\"trends\": [\"sustainable fashion\"], \"competitors\": [\"brand_a\"]}",
+        "campaign_context": "{\"client\": \"gymshark\", \"goal\": \"growth\"}",
+        "historical_analysis": "[]"
+      }
+    }
+  ]
+}

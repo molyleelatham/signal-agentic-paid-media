@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>adtec — AI Marketing Intelligence</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="src/theme.css"/>
+<style>
+  html,body{ height:100%; overflow:hidden; background:#000; }
+  #root{ height:100%; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<!-- libs -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<!-- data + webgl (plain JS) -->
+<script src="src/data.js"></script>
+<script src="src/webgl.js"></script>
+
+<!-- components (babel) -->
+<script type="text/babel" src="src/shared.jsx"></script>
+<script type="text/babel" src="src/Terminal.jsx"></script>
+<script type="text/babel" src="src/Page1.jsx"></script>
+<script type="text/babel" src="src/Page2.jsx"></script>
+<script type="text/babel" src="src/Page3.jsx"></script>
+<script type="text/babel" src="src/Page4.jsx"></script>
+<script type="text/babel" src="src/AppDesktop.jsx"></script>
+<script type="text/babel">
+  const mount = () => {
+    if (!window.AppDesktop) { return setTimeout(mount, 30); }
+    ReactDOM.createRoot(document.getElementById("root")).render(<AppDesktop/>);
+  };
+  mount();
+</script>
+</body>
+</html>

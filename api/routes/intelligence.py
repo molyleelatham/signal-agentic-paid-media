@@ -9,11 +9,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import List, Optional, Dict
+from datetime import datetime
+from dataclasses import asdict
 
+from shared.database import get_async_session
 from services.intelligence.tavily_client import TavilyClient
 from services.intelligence.thrad_bert_client import ThradBERTClient
 from services.intelligence.disbert_thrad_classification import DisBERTThradAdIntegrator, DisBERTThradClassification
 from services.platform_integration.google_ads_manager import GoogleAdsManager, IntelligenceToActivationPipeline
+from services.intelligence.tavily_research import GymsharkTavilyResearch
 
 router = APIRouter(prefix="/api/v1/intelligence", tags=["intelligence"])
 
@@ -423,4 +427,257 @@ async def get_realtime_keywords(
         ],
         "total_keywords": len(positive_keywords),
         "generated_at": datetime.now().isoformat()
+    }
+
+
+@router.post("/gymshark-research")
+async def perform_gymshark_research(
+    query: str = Query("Gymshark fitness apparel", description="Research query"),
+    max_results: int = Query(10, description="Max results per source"),
+    time_range: str = Query("month", description="Time range (day, week, month, year)"),
+    session: AsyncSession = Depends(get_async_session)
+):
+    """
+    Perform comprehensive Gymshark research using Tavily.
+    
+    Scrapes:
+    - Reddit for Gymshark discussions
+    - SEO pages for keyword research
+    - Extracts Google keywords for bidding
+    - Generates Thrad BERT inputs
+    - Generates content ideas from research
+    """
+    from shared.utils.settings import settings
+    
+    tavily_api_key = settings.tavily_api_key
+    
+    if not tavily_api_key:
+        raise HTTPException(
+            status_code=400,
+            detail="TAVILY_API_KEY not configured. Please set TAVILY_API_KEY in environment."
+        )
+    
+    # Initialize research service
+    research_service = GymsharkTavilyResearch(tavily_api_key=tavily_api_key)
+    
+    # Perform comprehensive research
+    try:
+        research_result = research_service.perform_comprehensive_research(
+            base_query=query,
+            max_results_per_source=max_results,
+            time_range=time_range
+        )
+        
+        # Return summary and full results
+        return {
+            "summary": research_service.get_research_summary(research_result),
+            "full_results": {
+                "reddit_posts": [asdict(post) for post in research_result.reddit_posts],
+                "seo_keywords": [asdict(kw) for kw in research_result.seo_keywords],
+                "google_keywords": [asdict(kw) for kw in research_result.google_keywords],
+                "thrad_inputs": [asdict(inp) for inp in research_result.thrad_inputs],
+                "content_ideas": [asdict(idea) for idea in research_result.content_ideas]
+            }
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error performing research: {str(e)}"
+        )
+
+
+@router.get("/gymshark-reddit")
+async def scrape_gymshark_reddit(
+    query: str = Query("Gymshark", description="Search query"),
+    max_results: int = Query(10, description="Max results"),
+    time_range: str = Query("month", description="Time range"),
+    session: AsyncSession = Depends(get_async_session)
+):
+    """
+    Scrape Reddit for Gymshark-related discussions.
+    """
+    from shared.utils.settings import settings
+    
+    tavily_api_key = settings.tavily_api_key
+    
+    if not tavily_api_key:
+        raise HTTPException(
+            status_code=400,
+            detail="TAVILY_API_KEY not configured."
+        )
+    
+    research_service = GymsharkTavilyResearch(tavily_api_key=tavily_api_key)
+    
+    reddit_posts = research_service.scrape_reddit(
+        query=query,
+        max_results=max_results,
+        time_range=time_range,
+        subreddits=["fitness", "bodyweight", "Gymshark"]
+    )
+    
+    return {
+        "query": query,
+        "posts_count": len(reddit_posts),
+        "posts": [asdict(post) for post in reddit_posts]
+    }
+
+
+@router.get("/gymshark-seo-keywords")
+async def get_gymshark_seo_keywords(
+    query: str = Query("Gymshark fitness", description="Search query"),
+    max_results: int = Query(10, description="Max results"),
+    time_range: str = Query("month", description="Time range"),
+    session: AsyncSession = Depends(get_async_session)
+):
+    """
+    Scrape SEO pages for Gymshark keywords.
+    """
+    from shared.utils.settings import settings
+    
+    tavily_api_key = settings.tavily_api_key
+    
+    if not tavily_api_key:
+        raise HTTPException(
+            status_code=400,
+            detail="TAVILY_API_KEY not configured."
+        )
+    
+    research_service = GymsharkTavilyResearch(tavily_api_key=tavily_api_key)
+    
+    seo_keywords = research_service.scrape_seo_pages(
+        query=query,
+        max_results=max_results,
+        time_range=time_range
+    )
+    
+    return {
+        "query": query,
+        "keywords_count": len(seo_keywords),
+        "keywords": [asdict(kw) for kw in seo_keywords]
+    }
+
+
+@router.get("/gymshark-google-keywords")
+async def get_gymshark_google_keywords(
+    query: str = Query("Gymshark fitness", description="Search query"),
+    max_results: int = Query(10, description="Max results"),
+    session: AsyncSession = Depends(get_async_session)
+):
+    """
+    Extract Google keywords for bidding from research data.
+    """
+    from shared.utils.settings import settings
+    
+    tavily_api_key = settings.tavily_api_key
+    
+    if not tavily_api_key:
+        raise HTTPException(
+            status_code=400,
+            detail="TAVILY_API_KEY not configured."
+        )
+    
+    research_service = GymsharkTavilyResearch(tavily_api_key=tavily_api_key)
+    
+    # First get research data
+    reddit_posts = research_service.scrape_reddit(query=query, max_results=max_results)
+    seo_keywords = research_service.scrape_seo_pages(query=query, max_results=max_results)
+    
+    # Extract Google keywords
+    google_keywords = research_service.extract_google_keywords(
+        research_data=reddit_posts,
+        seo_keywords=seo_keywords,
+        max_keywords=20
+    )
+    
+    return {
+        "query": query,
+        "keywords_count": len(google_keywords),
+        "keywords": [asdict(kw) for kw in google_keywords]
+    }
+
+
+@router.get("/gymshark-thrad-inputs")
+async def get_gymshark_thrad_inputs(
+    query: str = Query("Gymshark fitness", description="Search query"),
+    max_results: int = Query(10, description="Max results"),
+    session: AsyncSession = Depends(get_async_session)
+):
+    """
+    Generate Thrad BERT inputs for Gymshark research.
+    """
+    from shared.utils.settings import settings
+    
+    tavily_api_key = settings.tavily_api_key
+    
+    if not tavily_api_key:
+        raise HTTPException(
+            status_code=400,
+            detail="TAVILY_API_KEY not configured."
+        )
+    
+    research_service = GymsharkTavilyResearch(tavily_api_key=tavily_api_key)
+    
+    # Get research data
+    reddit_posts = research_service.scrape_reddit(query=query, max_results=max_results)
+    google_keywords = research_service.extract_google_keywords(
+        research_data=reddit_posts,
+        seo_keywords=[],
+        max_keywords=20
+    )
+    
+    # Generate Thrad inputs
+    thrad_inputs = research_service.generate_thrad_inputs(
+        research_data=reddit_posts,
+        google_keywords=google_keywords
+    )
+    
+    return {
+        "query": query,
+        "inputs_count": len(thrad_inputs),
+        "inputs": [asdict(inp) for inp in thrad_inputs]
+    }
+
+
+@router.get("/gymshark-content-ideas")
+async def get_gymshark_content_ideas(
+    query: str = Query("Gymshark fitness", description="Search query"),
+    max_results: int = Query(10, description="Max results"),
+    session: AsyncSession = Depends(get_async_session)
+):
+    """
+    Generate content ideas from Gymshark research.
+    """
+    from shared.utils.settings import settings
+    
+    tavily_api_key = settings.tavily_api_key
+    
+    if not tavily_api_key:
+        raise HTTPException(
+            status_code=400,
+            detail="TAVILY_API_KEY not configured."
+        )
+    
+    research_service = GymsharkTavilyResearch(tavily_api_key=tavily_api_key)
+    
+    # Get research data
+    reddit_posts = research_service.scrape_reddit(query=query, max_results=max_results)
+    seo_keywords = research_service.scrape_seo_pages(query=query, max_results=max_results)
+    google_keywords = research_service.extract_google_keywords(
+        research_data=reddit_posts,
+        seo_keywords=seo_keywords,
+        max_keywords=20
+    )
+    
+    # Generate content ideas
+    content_ideas = research_service.generate_content_ideas(
+        research_data=reddit_posts,
+        seo_keywords=seo_keywords,
+        google_keywords=google_keywords
+    )
+    
+    return {
+        "query": query,
+        "ideas_count": len(content_ideas),
+        "ideas": [asdict(idea) for idea in content_ideas]
     }

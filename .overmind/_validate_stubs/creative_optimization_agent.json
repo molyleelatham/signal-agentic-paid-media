@@ -1,0 +1,11 @@
+{
+  "test_cases": [
+    {
+      "input": {
+        "creative_data": "{\"creative_id\": \"cr_001\", \"headline\": \"Train harder\", \"format\": \"video\"}",
+        "performance_metrics": "{\"ctr\": 0.04, \"cvr\": 0.02, \"spend\": 500}",
+        "benchmark_data": "{\"ctr\": 0.03, \"cvr\": 0.015}"
+      }
+    }
+  ]
+}

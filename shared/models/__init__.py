@@ -9,6 +9,14 @@ from shared.models.token import StakeStatus, TokenStake, TokenTransaction, Trans
 from shared.models.topic_cluster import TopicCluster, ZoneType
 from shared.models.trading import BidDecision, BudgetAllocation
 from shared.models.user import User
+from shared.models.demo_models import (
+    ModelPerformance,
+    KeywordPerformance,
+    AgentExecutionHistory,
+    ABTestCampaign,
+    ABTestResult,
+    ContentPerformanceByChannel
+)
 
 __all__ = [
     "User",
@@ -31,4 +39,10 @@ __all__ = [
     "OvermindTrace",
     "IntelligenceDocument",
     "AdstockDecay",
+    "ModelPerformance",
+    "KeywordPerformance",
+    "AgentExecutionHistory",
+    "ABTestCampaign",
+    "ABTestResult",
+    "ContentPerformanceByChannel",
 ]

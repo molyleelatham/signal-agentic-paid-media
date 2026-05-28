@@ -25,6 +25,8 @@ except ImportError:
     OPENAI_AVAILABLE = False
     print("Warning: OpenAI not available. Install with: pip install openai")
 
+from shared.agents.cursor_integration import CursorComposerService
+
 
 class OvermindTracer:
     """
@@ -350,7 +352,8 @@ class BaseAgent:
         self,
         name: str,
         overmind_tracer: OvermindTracer = None,
-        llm_client: Any = None
+        llm_client: Any = None,
+        cursor_composer: CursorComposerService = None,
     ):
         """
         Initialize base agent.
@@ -359,18 +362,19 @@ class BaseAgent:
             name: Agent name
             overmind_tracer: Overmind tracer instance
             llm_client: LLM client for inference
+            cursor_composer: Cursor Composer 2.5 service (preferred when configured)
         """
         self.name = name
         self.overmind_tracer = overmind_tracer or OvermindTracer()
         self.memory = AgentMemory()
-        
-        # Initialize OpenAI client if not provided
+        self.cursor_composer = cursor_composer or CursorComposerService()
+
+        # Initialize OpenAI client if not provided (fallback after Cursor)
         if llm_client is None and OPENAI_AVAILABLE:
             api_key = os.getenv("OPENAI_API_KEY")
             if api_key:
                 self.llm_client = OpenAI(api_key=api_key)
             else:
-                print("⚠️  OPENAI_API_KEY not set. Agent will use fallback responses.")
                 self.llm_client = None
         else:
             self.llm_client = llm_client
@@ -393,8 +397,21 @@ class BaseAgent:
             LLM response
         """
         full_prompt = self._build_prompt(prompt, context)
-        
-        # Use real LLM if available, otherwise fallback
+        system_prompt = (
+            f"You are {self.name}, an AI agent for autonomous media trading optimization "
+            "on the SIGNAL platform. Provide concise, actionable analysis."
+        )
+
+        if self.cursor_composer.is_configured:
+            try:
+                return await self.cursor_composer.complete(
+                    user_prompt=full_prompt,
+                    system_prompt=system_prompt,
+                )
+            except Exception as e:
+                print(f"❌ Cursor Composer call failed: {e}. Trying OpenAI fallback.")
+
+        # Use OpenAI if Cursor unavailable
         if self.llm_client:
             try:
                 response = self.llm_client.chat.completions.create(

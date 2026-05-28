@@ -1,0 +1,76 @@
+/* ============================================================
+   adtec — design system
+   GS Black brand · Bloomberg/Trading-terminal density
+   Fonts: Space Grotesk (headings) · IBM Plex Sans (body / UI / captions)
+   ============================================================ */
+:root{
+  --black:#000000;
+  --bg-0:#0A0A0A;     /* terminal / deepest panels */
+  --bg-1:#0D0D0D;     /* page sub-panels */
+  --bg-2:#111111;     /* cards */
+  --bg-3:#161616;     /* raised */
+  --line:#1F1F1F;     /* hairline borders */
+  --line-2:#2A2A2A;
+  --txt:#FFFFFF;
+  --txt-2:#A0A0A0;    /* secondary */
+  --txt-3:#666666;    /* muted / timestamps */
+  --txt-4:#444444;
+  --cyan:#00D4FF;     /* data-viz highlight */
+  --green:#00FF88;    /* terminal / active / BUY */
+  --amber:#FFB800;    /* degraded / HOLD / warn */
+  --red:#FF4444;      /* inactive / SELL / error */
+  --purple:#8B5CF6;
+  --emerald:#10B981;
+  /* platforms */
+  --meta:#1877F2; --google:#4285F4; --tiktok:#FF0050; --msft:#00A4EF;
+
+  --mono:"IBM Plex Sans",ui-sans-serif,system-ui,sans-serif;   /* body / UI / captions */
+  --disp:"Space Grotesk",ui-sans-serif,system-ui,sans-serif;    /* H1 / H2 headings */
+  --r:3px;            /* tight radius — terminal feel */
+}
+
+*{ box-sizing:border-box; }
+html,body{ margin:0; padding:0; background:var(--black); color:var(--txt); }
+body{ font-family:var(--mono); font-size:13px; line-height:1.4; -webkit-font-smoothing:antialiased; }
+
+h1,h2,h3,h4{ font-family:var(--disp); font-weight:700; margin:0; letter-spacing:-0.01em; }
+.disp{ font-family:var(--disp); }
+.mono{ font-family:var(--mono); }
+.up{ text-transform:uppercase; }
+.tnum{ font-variant-numeric:tabular-nums; font-feature-settings:"tnum"; }
+
+/* page-number / eyebrow label */
+.eyebrow{ font-family:var(--mono); font-weight:400; font-size:10px; letter-spacing:0.22em; text-transform:uppercase; color:var(--txt-3); }
+
+/* custom scrollbar */
+*::-webkit-scrollbar{ width:8px; height:8px; }
+*::-webkit-scrollbar-track{ background:var(--line); }
+*::-webkit-scrollbar-thumb{ background:var(--txt-4); border-radius:0; }
+*::-webkit-scrollbar-thumb:hover{ background:var(--txt-3); }
+*{ scrollbar-width:thin; scrollbar-color:var(--txt-4) var(--line); }
+
+/* status dots */
+.dot{ display:inline-block; width:10px; height:10px; border-radius:50%; flex:none; }
+.dot.active{ background:var(--green); box-shadow:0 0 8px rgba(0,255,136,.7); animation:pulse 2s infinite; }
+.dot.inactive{ background:var(--red); }
+.dot.degraded{ background:var(--amber); animation:blink .7s steps(2,start) infinite; }
+@keyframes pulse{ 0%,100%{ opacity:1;} 50%{ opacity:.35; } }
+@keyframes blink{ 50%{ opacity:.2; } }
+@keyframes flash{ 0%{ background:rgba(255,184,0,.45);} 100%{ background:transparent; } }
+
+/* pills / badges */
+.pill{ display:inline-flex; align-items:center; gap:5px; padding:2px 7px; border-radius:2px; font-size:10px; letter-spacing:.05em; font-family:var(--mono); }
+.badge-up{ color:var(--green); background:rgba(0,255,136,.12); }
+.badge-down{ color:var(--red); background:rgba(255,68,68,.12); }
+.badge-flat{ color:var(--txt-2); background:rgba(255,255,255,.06); }
+
+/* generic panel */
+.panel{ background:var(--bg-2); border:1px solid var(--line); }
+
+/* buttons */
+.btn{ font-family:var(--mono); font-size:11px; letter-spacing:.08em; text-transform:uppercase; padding:8px 14px; border-radius:var(--r); cursor:pointer; border:1px solid var(--line-2); background:var(--bg-2); color:var(--txt); transition:all .15s; }
+.btn:hover{ border-color:var(--txt-3); background:var(--bg-3); }
+.btn-primary{ background:var(--black); border:1px solid #fff; color:#fff; font-weight:500; }
+.btn-primary:hover{ background:#fff; color:#000; }
+
+::selection{ background:rgba(0,212,255,.3); }

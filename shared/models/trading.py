@@ -36,7 +36,7 @@ class BidDecision(Base):
 class BudgetAllocation(Base):
     """Budget allocation records (Thompson sampling)."""
     
-    __tablename__ = "budget_allocations"
+    __tablename__ = "trading_budget_allocations"
     
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     campaign_id: Mapped[str] = mapped_column(String(36), ForeignKey("campaigns.id"), nullable=False, index=True)

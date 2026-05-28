@@ -38,7 +38,7 @@ class Creative(Base):
     cta_text: Mapped[Optional[str]] = mapped_column(String(100))
     
     # Metadata
-    metadata: Mapped[Optional[dict]] = mapped_column(JSON)
+    meta_data: Mapped[Optional[dict]] = mapped_column(JSON)
     
     # Status
     status: Mapped[str] = mapped_column(String(50), default="draft")  # draft, review, approved, active, paused
@@ -69,7 +69,7 @@ class CreativePlacement(Base):
     start_date: Mapped[Optional[datetime]] = mapped_column(String(50))
     end_date: Mapped[Optional[datetime]] = mapped_column(String(50))
     
-    metadata: Mapped[Optional[dict]] = mapped_column(JSON)
+    meta_data: Mapped[Optional[dict]] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, onupdate=datetime.utcnow)
     

@@ -19,7 +19,7 @@ class IntelligenceDocument(Base):
     campaign_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("campaigns.id"))
     source_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)  # competitor, market, social, brand
     content: Mapped[str] = mapped_column(String, nullable=False)
-    metadata: Mapped[Optional[dict]] = mapped_column(JSON)
+    meta_data: Mapped[Optional[dict]] = mapped_column(JSON)
     embedding: Mapped[Optional[bytes]] = mapped_column(LargeBinary)  # Vector embedding
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     

@@ -11,6 +11,7 @@ from sqlalchemy import select
 from typing import List, Optional, Dict
 from datetime import datetime, timedelta
 from decimal import Decimal
+from dataclasses import asdict
 import uuid
 
 from shared.database import get_async_session
@@ -28,6 +29,8 @@ from services.planning import (
     ClientContext,
     BusinessGoal
 )
+from services.media_planning import campaign_keyword_logger
+from services.intelligence.tavily_research import GymsharkTavilyResearch
 
 router = APIRouter(prefix="/api/v1/planning", tags=["planning"])
 
@@ -721,4 +724,158 @@ async def get_funnel_stages(
             for stage in stages
         ],
         "total_stages": len(stages)
+    }
+
+
+@router.post("/complete-planning-with-keywords")
+async def complete_planning_with_keywords(
+    query: str = Query("Gymshark fitness apparel", description="Research query"),
+    max_results: int = Query(10, description="Max results per source"),
+    use_disbert: bool = Query(True, description="Use Thrad DisBERT model for context organization"),
+    session: AsyncSession = Depends(get_async_session)
+):
+    """
+    Complete media planning with keyword logging.
+    
+    This endpoint:
+    1. Performs Tavily research (Reddit, SEO, Google keywords)
+    2. Extracts Google keywords for bidding
+    3. Logs keywords to GYMSHARK_PPC_GENERIC_2026 campaign
+    4. Generates Thrad data for each keyword
+    5. Returns complete planning results with logs
+    
+    If use_disbert is True, logs will specify "using thrad_disbert model".
+    """
+    from shared.utils.settings import settings
+    
+    tavily_api_key = settings.tavily_api_key
+    
+    if not tavily_api_key:
+        raise HTTPException(
+            status_code=400,
+            detail="TAVILY_API_KEY not configured"
+        )
+    
+    # Step 1: Perform Tavily research
+    research_service = GymsharkTavilyResearch(tavily_api_key=tavily_api_key)
+    
+    research_result = research_service.perform_comprehensive_research(
+        base_query=query,
+        max_results_per_source=max_results,
+        time_range="month"
+    )
+    
+    # Step 2: Extract Google keywords
+    google_keywords_dicts = [
+        {
+            "keyword": kw.keyword,
+            "match_type": kw.match_type,
+            "bid_suggestion": kw.bid_suggestion,
+            "relevance_to_gymshark": kw.relevance_to_gymshark,
+            "search_intent": kw.search_intent,
+            "category": "H" if kw.search_intent == "transactional" else "E"
+        }
+        for kw in research_result.google_keywords
+    ]
+    
+    # Step 3: Log keywords to campaign with model specification
+    model_used = "thrad_disbert" if use_disbert else None
+    log_entries = campaign_keyword_logger.log_keywords_from_research(
+        google_keywords=google_keywords_dicts,
+        source="tavily",
+        model_used=model_used
+    )
+    
+    # Step 4: Return complete results
+    return {
+        "research_summary": research_result.summary,
+        "keywords_added": len(log_entries),
+        "campaign_name": "GYMSHARK_PPC_GENERIC_2026",
+        "model_used": model_used,
+        "keyword_logs": [
+            {
+                "keyword": log.keyword,
+                "match_type": log.match_type,
+                "bid_amount": log.bid_amount,
+                "source": log.source,
+                "confidence": log.confidence,
+                "intent": log.intent,
+                "category": log.category,
+                "model_used": log.model_used,
+                "timestamp": log.timestamp,
+                "thrad_data": log.thrad_data
+            }
+            for log in log_entries
+        ],
+        "research_data": {
+            "reddit_posts_count": len(research_result.reddit_posts),
+            "seo_keywords_count": len(research_result.seo_keywords),
+            "google_keywords_count": len(research_result.google_keywords),
+            "thrad_inputs_count": len(research_result.thrad_inputs),
+            "content_ideas_count": len(research_result.content_ideas)
+        }
+    }
+
+
+@router.get("/campaign-keyword-logs")
+async def get_campaign_keyword_logs(
+    campaign_name: str = Query("GYMSHARK_PPC_GENERIC_2026", description="Campaign name"),
+    limit: int = Query(50, description="Max logs to return"),
+    session: AsyncSession = Depends(get_async_session)
+):
+    """Get keyword logs for a campaign."""
+    logs = campaign_keyword_logger.get_logs_by_campaign(campaign_name, limit)
+    
+    return {
+        "campaign_name": campaign_name,
+        "logs_count": len(logs),
+        "logs": logs
+    }
+
+
+@router.get("/keyword-logs-by-source")
+async def get_keyword_logs_by_source(
+    source: str = Query(..., description="Source (tavily, manual, bert, thrad)"),
+    limit: int = Query(50, description="Max logs to return"),
+    session: AsyncSession = Depends(get_async_session)
+):
+    """Get keyword logs by source."""
+    logs = campaign_keyword_logger.get_logs_by_source(source, limit)
+    
+    return {
+        "source": source,
+        "logs_count": len(logs),
+        "logs": logs
+    }
+
+
+@router.post("/log-keyword-manually")
+async def log_keyword_manually(
+    keyword: str = Query(..., description="Keyword to log"),
+    match_type: str = Query("phrase", description="Match type"),
+    bid_amount: float = Query(2.0, description="Bid amount"),
+    source: str = Query("manual", description="Source"),
+    confidence: float = Query(0.7, description="Confidence"),
+    intent: str = Query("informational", description="Intent"),
+    category: Optional[str] = Query(None, description="Category"),
+    session: AsyncSession = Depends(get_async_session)
+):
+    """Manually log a keyword addition."""
+    log_entry = campaign_keyword_logger.log_keyword_addition(
+        keyword=keyword,
+        match_type=match_type,
+        bid_amount=bid_amount,
+        source=source,
+        confidence=confidence,
+        intent=intent,
+        category=category
+    )
+    
+    # Generate Thrad data
+    thrad_data = campaign_keyword_logger.generate_thrad_data(keyword)
+    log_entry.thrad_data = asdict(thrad_data)
+    
+    return {
+        "message": "Keyword logged successfully",
+        "log": asdict(log_entry)
     }

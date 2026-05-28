@@ -20,7 +20,7 @@ class Client(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     industry: Mapped[str] = mapped_column(String(100), nullable=False)
     status: Mapped[str] = mapped_column(String(50), default="active")  # active, inactive, trial
-    metadata: Mapped[Optional[dict]] = mapped_column(JSON)
+    meta_data: Mapped[Optional[dict]] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, onupdate=datetime.utcnow)
     

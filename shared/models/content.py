@@ -37,7 +37,7 @@ class ContentBrief(Base):
     status: Mapped[str] = mapped_column(String(50), default="draft")  # draft, approved, in_production, completed
     priority: Mapped[str] = mapped_column(String(20), default="medium")  # low, medium, high
     
-    metadata: Mapped[Optional[dict]] = mapped_column(JSON)
+    meta_data: Mapped[Optional[dict]] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, onupdate=datetime.utcnow)
     

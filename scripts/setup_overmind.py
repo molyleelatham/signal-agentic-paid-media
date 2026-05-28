@@ -42,30 +42,23 @@ def setup_overmind():
         print("Creating template .env file...")
         
         template = """# Overmind Configuration for SIGNAL Platform
-# Get your API key from: https://platform.overmind.ai/
+# See docs/LLM_ARCHITECTURE.md — agents use Cursor; Overmind analyzer uses OpenAI.
 
-# OpenAI API Key (required for OpenAI models)
-OPENAI_API_KEY=your_openai_api_key_here
-
-# Overmind API Key (required for Overmind platform)
+# Overmind platform
 OVERMIND_API_KEY=your_overmind_api_key_here
-
-# Overmind Project ID
 OVERMIND_PROJECT_ID=your_project_id_here
-
-# Environment
 OVERMIND_ENVIRONMENT=development
-
-# Service Name
 OVERMIND_SERVICE_NAME=signal-platform
 
-# LLM Provider (openai, anthropic, google-genai)
+# OpenAI — Overmind setup, optimize, analyzer, synthetic datagen
+OPENAI_API_KEY=your_openai_api_key_here
+ANALYZER_MODEL=gpt-4o-mini
+SYNTHETIC_DATAGEN_MODEL=gpt-4o-mini
 DEFAULT_LLM_PROVIDER=openai
 
-# Model Settings
-DEFAULT_MODEL=gpt-4-turbo
-DEFAULT_TEMPERATURE=0.7
-DEFAULT_MAX_TOKENS=2048
+# Cursor — agent harness evals (Composer 2.5)
+CURSOR_API_KEY=
+CURSOR_MODEL=composer-2.5
 """
         
         with open(env_file, "w") as f:

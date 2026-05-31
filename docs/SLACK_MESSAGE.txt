@@ -1,0 +1,20 @@
+SIGNAL Platform - AI-Powered Ad Optimization
+
+Built with Overmind SDK for agent orchestration + Overmind Agent Optimizer + LLMJudge for 0-100 scoring of AI outputs.
+
+Tech Highlights:
+• 5 AI Agents (Bid Strategy, Content, Creative, Market, Orchestration)
+• Overmind Agent Optimizer - Automatic agent performance tuning
+• LOESS/DMR Bid Discovery - Locally Estimated Scatterplot Smoothing for bid curves
+• Bayesian Cold Start - James-Stein shrinkage for new campaigns
+• DisBERT Classification - 13 segments (A-M) with commercial intent scoring (10-95%)
+• Tavily Research - Real-time web scraping with automatic field mapping
+• Complete tracing via Overmind observability
+• Evaluation framework - 0-100 scoring on all AI outputs
+• Data algorithms: Bid Discovery, Asymmetric PnL, Keyword Classification
+
+Stack: FastAPI, React, PostgreSQL, DisBERT BERT, Tavily, Overmind SDK, SciPy
+
+Innovation: Automated pipeline from research → classification → LOESS bidding → Bayesian optimization → agent optimization → execution
+
+Demo: http://localhost:5173

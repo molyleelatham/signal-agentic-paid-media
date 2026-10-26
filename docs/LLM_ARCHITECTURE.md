@@ -52,13 +52,9 @@ OVERMIND_API_KEY=ovr_...
 
 ## Bootstrap
 
-Sync keys from `.env.local` into `.overmind/.env`:
+`scripts/bootstrap_overmind_env.py` is not in this repository. Put the keys in `.env` (the app reads `.env` and `.env.local`) and copy the same values into `.overmind/.env` for the Overmind CLI.
 
-```bash
-python scripts/bootstrap_overmind_env.py
-```
-
-Then set a real `OPENAI_API_KEY` in `.env.local` and re-run bootstrap (Overmind setup will fail with placeholder OpenAI keys).
+Overmind setup fails if `OPENAI_API_KEY` is still a placeholder.
 
 ## Optimization path
 

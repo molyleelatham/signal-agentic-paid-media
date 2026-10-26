@@ -17,7 +17,7 @@ This creates `.overmind/.env` with your API keys.
 
 ### 2. Set API Keys
 
-Edit `.env.local`, then sync with `python scripts/bootstrap_overmind_env.py`.
+Edit `.env.local`, and copy the same keys into `.overmind/.env`. `scripts/bootstrap_overmind_env.py` is not in this repository.
 
 You need **both** backends (see `docs/LLM_ARCHITECTURE.md`):
 

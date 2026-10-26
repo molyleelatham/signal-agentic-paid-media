@@ -28,7 +28,7 @@ services:
       - "-c"
       - "checkpoint_completion_target=0.9"
       - "-c"
-      "wal_buffers=16MB"
+      - "wal_buffers=16MB"
       - "-c"
       - "default_statistics_target=100"
       - "-c"

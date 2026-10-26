@@ -1,9 +1,9 @@
 [project]
 name = "signal-platform"
 version = "0.1.0"
-description = "Autonomous Media Trading Platform with Attention Token Economy"
+description = "Trading engine for paid-media bids, budget allocation and creative-decay monitoring"
 authors = [
-    {name = "SIGNAL Team"}
+    {name = "Moly Leelatham"}
 ]
 requires-python = ">=3.11"
 readme = "README.md"
@@ -97,6 +97,7 @@ disallow_untyped_defs = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+pythonpath = ["."]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]

@@ -5,18 +5,11 @@ from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config, pool
 
+# Importing the models package registers every table on Base.metadata,
+# including modules that are not re-exported.
+import shared.models  # noqa: F401
 from alembic import context
-
-# Import your base and models here
 from shared.database import Base
-from shared.models import (
-    Campaign,
-    MediaPosition,
-    TokenStake,
-    TokenTransaction,
-    TopicCluster,
-    User,
-)
 from shared.utils.settings import settings
 
 # this is the Alembic Config object, which provides

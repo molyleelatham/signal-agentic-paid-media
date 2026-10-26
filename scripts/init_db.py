@@ -10,6 +10,7 @@ from sqlalchemy import text
 
 from shared.utils.settings import settings
 from shared.database import Base
+import shared.models  # noqa: F401  # register every table before create_all
 
 
 async def init_database():
@@ -34,7 +35,8 @@ async def init_database():
 
 async def create_extensions():
     """Create PostgreSQL extensions for better performance."""
-    engine = create_async_engine(settings.database_sync_url)
+    # The sync URL has no async driver. Extensions use the same async URL as the tables.
+    engine = create_async_engine(settings.database_url)
     
     extensions = [
         "uuid-ossp",  # UUID generation

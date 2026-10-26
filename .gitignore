@@ -61,10 +61,6 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
-# Alembic
-alembic/versions/*.py
-!alembic/versions/.gitkeep
-
 # Temporary files
 tmp/
 temp/

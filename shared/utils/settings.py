@@ -24,8 +24,8 @@ class Settings(BaseSettings):
     port: int = 8000
     
     # Database
-    database_url: str = "postgresql+asyncpg://user:password@localhost:5432/signal"
-    database_sync_url: str = "postgresql://user:password@localhost:5432/signal"
+    database_url: str = "postgresql+asyncpg://signal_user:signal_pass@localhost:5432/signal"
+    database_sync_url: str = "postgresql+psycopg2://signal_user:signal_pass@localhost:5432/signal"
     
     # Redis
     redis_url: str = "redis://localhost:6379/0"
